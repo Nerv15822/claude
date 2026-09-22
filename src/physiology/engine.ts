@@ -4,7 +4,9 @@
 import { AUX_SIZE, A, S, STATE_SIZE, clampValves, evaluate, type EvalContext } from './model';
 import { BeatAnalyzer, RespAnalyzer, type BeatMetrics, type RespMetrics } from './metrics';
 import { applyPatch, defaultParams, type Params, type ParamsPatch } from './params';
+import { ecgValue } from './ecg';
 import { RhythmScheduler } from './rhythm';
+import { PhonoGenerator, jetVelocity, murmurFromVelocity } from './sounds';
 import { computeVentilation, type VentilationState } from './ventilation';
 
 export const DEFAULT_DT = 0.0005;
@@ -41,6 +43,9 @@ export const SAMPLE_FIELDS = [
   'tP',
   'tQRS',
   'vSpt',
+  'ecg',
+  'phono',
+  'pleth',
 ] as const;
 export type SampleField = (typeof SAMPLE_FIELDS)[number];
 export const SAMPLE_SIZE = SAMPLE_FIELDS.length;
@@ -75,6 +80,17 @@ export class CardioEngine {
   private readonly ctx: EvalContext;
   private lastRespPhase = 0;
   private infusion = 0;
+  readonly phono = new PhonoGenerator();
+  /** Pressione arteriosa filtrata (passa-basso) come surrogato della pletismografia */
+  private pleth = 90;
+  private prevQmv = 0;
+  private prevQav = 0;
+  private prevQtv = 0;
+  private prevQpv = 0;
+  private prevPlv = 0;
+  private prevPrv = 0;
+  private prevEA = 0;
+  private prevDQmv = 0;
 
   constructor(opts: EngineOptions = {}) {
     this.params = opts.params ?? defaultParams();
@@ -104,6 +120,15 @@ export class CardioEngine {
 
   setParams(patch: ParamsPatch): void {
     applyPatch(this.params, patch);
+  }
+
+  /**
+   * Imposta istantaneamente la volemia (aggiungendo/togliendo volume nel compartimento venoso
+   * sistemico). Usato dalle analisi offline (curva di Frank-Starling), non dalla simulazione in tempo reale.
+   */
+  setBloodVolumeImmediate(volume: number): void {
+    this.y[S.V_SV] = this.y[S.V_SV]! + volume - this.totalVolume();
+    this.params.bloodVolume = volume;
   }
 
   /** Volume ematico totale attuale (mL). */
@@ -161,6 +186,9 @@ export class CardioEngine {
     // Grandezze algebriche allo stato finale (k1 usato come buffer scratch)
     evaluate(p, y, this.ctx, this.k1, this.aux);
 
+    this.detectSounds(dt);
+    this.pleth += (dt / 0.12) * (this.aux[A.P_AO]! - this.pleth);
+
     this.beat.accumulate(dt, y, this.aux);
     if (this.rhythm.qrsFired && this.beat.onQrs(y, this.aux, p)) {
       this.beatCount++;
@@ -171,6 +199,69 @@ export class CardioEngine {
       if (this.resp.onCycleEnd()) this.respCount++;
     }
     this.lastRespPhase = phase;
+  }
+
+  /** Eventi acustici (toni e soffi) dal passo appena integrato. */
+  private detectSounds(dt: number): void {
+    const p = this.params;
+    const y = this.y;
+    const a = this.aux;
+    const t = this.t;
+    const ph = this.phono;
+    const qmv = y[S.Q_MV]!;
+    const qav = y[S.Q_AV]!;
+    const qtv = y[S.Q_TV]!;
+    const qpv = y[S.Q_PV]!;
+    const plv = a[A.P_LV]!;
+    const dpdt = (plv - this.prevPlv) / dt;
+
+    // S1: chiusura delle valvole atrioventricolari
+    // (ampiezza ∝ dP/dt: una chiusura in diastasi, a dP/dt ~0, è silente)
+    const prv = a[A.P_RV]!;
+    const dpdtRv = (prv - this.prevPrv) / dt;
+    if (this.prevQmv > 0 && qmv <= 0) ph.burst(t, Math.min(Math.max(dpdt / 1500, 0), 1.6), 45, 0.018);
+    if (this.prevQtv > 0 && qtv <= 0)
+      ph.burst(t + 0.015, Math.min(Math.max(dpdtRv / 600, 0), 0.6), 40, 0.016);
+    // S2: chiusura delle semilunari
+    if (this.prevQav > 0 && qav <= 0) ph.burst(t, Math.min(a[A.P_AO]! / 110, 1.6), 60, 0.014);
+    if (this.prevQpv > 0 && qpv <= 0) ph.burst(t, Math.min((0.45 * a[A.P_PA_PROX]!) / 20, 1.4), 55, 0.012);
+    // S3: fine del riempimento rapido (picco dell'onda E) con pressione atriale elevata
+    const dq = qmv - this.prevQmv;
+    if (this.prevDQmv > 0 && dq <= 0 && qmv > 80 && a[A.E_A]! < 0.05) {
+      const amp = Math.min(Math.max((a[A.P_LA]! - 14) / 10, 0), 1) * 0.8;
+      ph.burst(t + 0.03, amp, 25, 0.03);
+    }
+    this.prevDQmv = dq;
+    // S4: contrazione atriale contro un ventricolo rigido (valvola mitrale aperta)
+    const eA = a[A.E_A]!;
+    if (this.prevEA < 0.9 && eA >= 0.9 && qmv > 0) {
+      const amp = Math.min(Math.max((plv - 14) / 10, 0), 1) * 0.7;
+      ph.burst(t, amp, 25, 0.025);
+    }
+    this.prevEA = eA;
+
+    // Soffi: velocità dei getti transvalvolari e di shunt
+    const vm = jetVelocity(qmv, qmv >= 0 ? p.mitral.area : p.mitral.regurgitantArea);
+    const va = jetVelocity(qav, qav >= 0 ? p.aortic.area : p.aortic.regurgitantArea);
+    const vt = jetVelocity(qtv, qtv >= 0 ? p.tricuspid.area : p.tricuspid.regurgitantArea);
+    const vp = jetVelocity(qpv, qpv >= 0 ? p.pulmonic.area : p.pulmonic.regurgitantArea);
+    const vsd = jetVelocity(y[S.Q_VSD]!, p.vsd.area);
+    const pda = jetVelocity(y[S.Q_PDA]!, p.pda.area);
+    const asd = jetVelocity(y[S.Q_ASD]!, p.asd.area);
+    const m = murmurFromVelocity(Math.max(vm, va, vt, vp, vsd, pda, asd));
+    ph.murmur = 0.35 * m;
+
+    this.prevQmv = qmv;
+    this.prevQav = qav;
+    this.prevQtv = qtv;
+    this.prevQpv = qpv;
+    this.prevPlv = plv;
+    this.prevPrv = prv;
+  }
+
+  /** RR ventricolare corrente (s). */
+  get currentRR(): number {
+    return this.rhythm.currentRR;
   }
 
   /** Avanza di `seconds` secondi simulati. */
@@ -211,6 +302,15 @@ export class CardioEngine {
     out[offset + F.tP] = Number.isFinite(this.rhythm.lastP) ? this.t - this.rhythm.lastP : -1;
     out[offset + F.tQRS] = Number.isFinite(this.rhythm.lastQRS) ? this.t - this.rhythm.lastQRS : -1;
     out[offset + F.vSpt] = a[A.V_SPT]!;
+    out[offset + F.ecg] = ecgValue({
+      t: this.t,
+      tP: out[offset + F.tP]!,
+      tQRS: out[offset + F.tQRS]!,
+      rr: this.rhythm.currentRR,
+      rhythm: this.params.rhythm.rhythm,
+    });
+    out[offset + F.phono] = this.phono.value(this.t);
+    out[offset + F.pleth] = this.pleth;
   }
 
   get lastBeat(): BeatMetrics {

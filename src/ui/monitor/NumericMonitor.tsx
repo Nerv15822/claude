@@ -33,24 +33,7 @@ export function NumericMonitor() {
   const vent = useSimulation((s) => s.params.ventilation.mode);
 
   return (
-    <section className={styles.grid} aria-label="Parametri vitali">
-      <Tile label="FC" unit="bpm" color="var(--ecg)" value={f0(b?.hr)} />
-      <Tile
-        label="PA"
-        unit="mmHg"
-        color="var(--abp)"
-        value={b ? `${f0(b.aoSys)}/${f0(b.aoDia)}` : '--/--'}
-        sub={b ? `(${f0(b.aoMean)})` : undefined}
-      />
-      <Tile label="PVC" unit="mmHg" color="var(--cvp)" value={f0(b?.raMean)} />
-      <Tile
-        label="PAP"
-        unit="mmHg"
-        color="var(--pap)"
-        value={b ? `${f0(b.paSys)}/${f0(b.paDia)}` : '--/--'}
-        sub={b ? `(${f0(b.paMean)})` : undefined}
-      />
-      <Tile label="PCWP" unit="mmHg" color="var(--pcwp)" value={f0(b?.laMean)} />
+    <section className={styles.grid} aria-label="Parametri derivati">
       <Tile
         label="GC"
         unit="L/min"
@@ -58,7 +41,13 @@ export function NumericMonitor() {
         value={f1(b?.co)}
         sub={b ? `VS ${f0(b.forwardSv)} mL` : undefined}
       />
-      <Tile label="FE" unit="%" color="var(--text)" value={f0(b ? b.ef * 100 : undefined)} />
+      <Tile
+        label="FE"
+        unit="%"
+        color="var(--text)"
+        value={f0(b ? b.ef * 100 : undefined)}
+        sub={b ? `VTD ${f0(b.lvEdv)} mL` : undefined}
+      />
       <Tile label="SvO₂" unit="%" color="var(--spo2)" value={f0(b ? b.svo2 * 100 : undefined)} />
       <Tile
         label={vent === 'ppv' ? 'PPV' : 'ΔPAS resp.'}
@@ -66,6 +55,13 @@ export function NumericMonitor() {
         color="var(--muted-strong)"
         value={vent === 'ppv' ? f0(r?.ppv) : f0(r?.sbpVariation)}
         sub={r ? `SVV ${f0(r.svv)}%` : undefined}
+      />
+      <Tile
+        label="RVS"
+        unit="dyn·s·cm⁻⁵"
+        color="var(--muted-strong)"
+        value={f0(b?.svr)}
+        sub={b ? `RVP ${f0(b.pvr)}` : undefined}
       />
     </section>
   );

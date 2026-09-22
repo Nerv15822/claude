@@ -21,7 +21,7 @@ Il deploy su GitHub Pages è automatico a ogni push su `main`
 
 - [x] Fase 1 — scaffold + deploy Pages
 - [x] Fase 2 — motore fisiologico + validazione
-- [ ] Fase 3 — tracciati, Wiggers, loop PV
+- [x] Fase 3 — tracciati, Wiggers, loop PV
 - [ ] Fase 4 — cuore 3D procedurale
 - [ ] Fase 5 — valvole, particelle, sezioni
 - [ ] Fase 6 — patologie, interventi, schede didattiche
@@ -93,3 +93,12 @@ Da leggere prima di usare il simulatore per la didattica.
 - **Ritmo:** la durata dell'attivazione ventricolare scala con √RR; in FA l'RR è estratto da una
   gaussiana troncata (CV 20 %) con PRNG deterministico.
 - **Coronarie, autoregolazione e ischemia:** non modellate nel motore.
+- **ECG:** sintetico (somma di gaussiane agganciate agli eventi del motore), non elettrofisiologico.
+- **Fonocardiogramma:** schematico. S1 ed S2 compaiono alla chiusura valvolare e la loro ampiezza è
+  proporzionale a dP/dt e alla pressione a valle. S3 e S4 usano soglie euristiche sulla pressione atriale
+  sinistra e sulla PTD del VS (> 14 mmHg). I soffi sono rumore proporzionale alla velocità del getto oltre 2 m/s.
+- **Pletismografia:** pressione arteriosa filtrata passa-basso (τ 120 ms), normalizzata: non modella
+  vasomotilità periferica né perfusione.
+- **Curva di Frank-Starling:** calcolata in apnea variando istantaneamente la volemia (8 s di transitorio
+  per punto). Il punto di lavoro è misurato con la ventilazione corrente, quindi può discostarsi di poco.
+- **Onde della CVP:** l'escursione a-v del modello (~8 mmHg) è maggiore di quella clinica (3–5 mmHg).

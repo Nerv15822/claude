@@ -1,3 +1,4 @@
+import type { PVLoopData, StarlingPoint } from '../physiology/analysis';
 import type { BeatMetrics, RespMetrics } from '../physiology/metrics';
 import type { Params, ParamsPatch } from '../physiology/params';
 
@@ -28,3 +29,10 @@ export type FromWorker = FrameMessage;
 export const SAMPLE_EVERY = 8;
 /** Capacità di un pacchetto (campioni) */
 export const FRAME_CAPACITY = 256;
+
+/** Richieste al worker di analisi */
+export type AnalysisRequest = { type: 'reference' } | { type: 'starling'; id: number; params: Params };
+
+export type AnalysisResponse =
+  | { type: 'reference'; loop: PVLoopData; curve: StarlingPoint[] }
+  | { type: 'starling'; id: number; curve: StarlingPoint[] };

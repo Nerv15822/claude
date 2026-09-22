@@ -46,20 +46,6 @@
 .toolbar button.on {
   border-color: #4da3ff;
 }
-.traces {
-  display: grid;
-  gap: 6px;
-}
-.columns {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr;
-}
-@media (min-width: 760px) {
-  .columns {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -76,4 +62,42 @@
   color: var(--muted);
   text-align: center;
   padding: 8px 0;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 38px;
+}
+.tabs button.tabOn {
+  background: rgba(77, 163, 255, 0.2);
+  border-color: rgba(77, 163, 255, 0.6);
+  color: #fff;
+}
+.main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 4px;
+  line-height: 1.45;
 }
