@@ -55,3 +55,13 @@ Questi range sono verificati da `tests/physiology/normal.test.ts`.
 - `CardioEngine.writeSample()` produce i campi `SAMPLE_FIELDS` (250 Hz nel worker, vedi `workers/protocol.ts`).
 - Metriche per battito (`BeatAnalyzer`, finalizzate al QRS successivo) e per ciclo respiratorio (`RespAnalyzer`).
 - Parametri calibrati (default in `params.ts`): se si cambiano, rieseguire `npm run calibrate` e i test.
+
+## Scena 3D — note operative
+
+- `scene/heart/anatomy.ts`: SDF dell'anatomia (cm; x = sinistra del paziente, y = craniale, z = anteriore).
+- `scene/heart/heartGeometry.ts` + `surfaceNets.ts`: mesh + attributi (`aChamber`, `aVessel`, `aAxis`), in
+  `workers/geometry.worker.ts`.
+- `scene/heart/heartMaterial.ts`: deformazione nel vertex shader (onBeforeCompile). Le uniform sono
+  aggiornate in `HeartMesh` via `deformation.ts` leggendo l'ultimo campione del buffer: nessuna logica
+  fisiologica nella scena.
+- La scena è caricata in lazy (`React.lazy`): il bundle iniziale non contiene three.js.

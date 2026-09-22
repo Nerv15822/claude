@@ -42,11 +42,17 @@ const LANES: Lane[] = [
   },
 ];
 
+const COMPACT = LANES.filter((l) => l.field === 'ecg' || l.field === 'pAo' || l.field === 'pRA');
+
 /** Vista "monitor multiparametrico": tracciati scorrevoli sincronizzati + parametri derivati. */
-export function MonitorView() {
+export function MonitorView({ height }: { height: number }) {
+  const compact = height < 300;
   return (
     <div style={{ display: 'grid', gap: 8 }}>
-      <StripChart lanes={LANES} height={Math.min(560, Math.max(380, window.innerHeight * 0.55))} />
+      <StripChart
+        lanes={compact ? COMPACT : LANES}
+        height={compact ? Math.max(120, height) : Math.min(560, height)}
+      />
       <NumericMonitor />
     </div>
   );

@@ -1,26 +1,38 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { startAnalysis } from '@store/analysis';
 import { startEngine, useSimulation } from '@store/simulation';
+import { useView, type ViewPreset } from '@scene/viewStore';
 import styles from './App.module.css';
 import { PVLoop } from './charts/PVLoop';
 import { StarlingCurve } from './charts/StarlingCurve';
 import { WiggersDiagram } from './charts/WiggersDiagram';
 import { ControlPanel } from './controls/ControlPanel';
 import { Segmented } from './controls/Slider';
+import { BottomSheet, type SheetLevel } from './layout/BottomSheet';
 import { HemodynamicTable } from './monitor/HemodynamicTable';
 import { MonitorView } from './monitor/MonitorView';
+
+// La scena 3D (three.js) è caricata in modo differito: il bundle iniziale resta leggero.
+const HeartScene = lazy(() => import('@scene/HeartScene').then((m) => ({ default: m.HeartScene })));
 
 type Tab = 'monitor' | 'wiggers' | 'pv' | 'starling' | 'dati' | 'controlli';
 const TABS: readonly (readonly [Tab, string])[] = [
   ['monitor', 'Monitor'],
+  ['controlli', 'Controlli'],
   ['wiggers', 'Wiggers'],
   ['pv', 'Loop PV'],
   ['starling', 'Starling'],
   ['dati', 'Dati'],
-  ['controlli', 'Controlli'],
+];
+const VIEWS: readonly (readonly [ViewPreset, string])[] = [
+  ['anteriore', 'Ant'],
+  ['sinistra', 'Lat'],
+  ['posteriore', 'Post'],
+  ['apice', 'Apice'],
+  ['base', 'Base'],
 ];
 
-function ChartsView({ tab }: { tab: Tab }) {
+function SheetContent({ tab, height }: { tab: Tab; height: number }) {
   const [side, setSide] = useState<'left' | 'right'>('left');
   const sideToggle = (
     <Segmented
@@ -33,10 +45,10 @@ function ChartsView({ tab }: { tab: Tab }) {
       onChange={setSide}
     />
   );
-  const h = Math.min(520, Math.max(360, window.innerHeight * 0.55));
+  const h = Math.max(260, Math.min(520, height - 70));
   switch (tab) {
     case 'monitor':
-      return <MonitorView />;
+      return <MonitorView height={height - 8} />;
     case 'wiggers':
       return (
         <>
@@ -70,19 +82,13 @@ function ChartsView({ tab }: { tab: Tab }) {
         </>
       );
     case 'dati':
-      return (
-        <section className={styles.card}>
-          <HemodynamicTable />
-        </section>
-      );
+      return <HemodynamicTable />;
     case 'controlli':
-      return (
-        <section className={styles.card}>
-          <ControlPanel />
-        </section>
-      );
+      return <ControlPanel />;
   }
 }
+
+const SHEET_FRACTIONS = [0.3, 0.56, 0.9];
 
 export function App() {
   const paused = useSimulation((s) => s.paused);
@@ -90,49 +96,84 @@ export function App() {
   const setPaused = useSimulation((s) => s.setPaused);
   const setSpeed = useSimulation((s) => s.setSpeed);
   const reset = useSimulation((s) => s.reset);
+  const setPreset = useView((s) => s.setPreset);
+  const preset = useView((s) => s.preset);
   const [tab, setTab] = useState<Tab>('monitor');
+  const [level, setLevel] = useState<SheetLevel>(0);
+  const [vh, setVh] = useState(window.innerHeight);
 
   useEffect(() => {
     startEngine();
     startAnalysis();
+    const onResize = () => setVh(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  const landscape = window.innerWidth > window.innerHeight && window.innerWidth >= 700;
+  const contentHeight = (landscape ? vh : SHEET_FRACTIONS[level]! * vh) - (landscape ? 70 : 84);
 
   return (
     <div className={styles.app}>
-      <header className={styles.header}>
-        <h1>CardioSim 3D</h1>
-        <span className={styles.tag}>Fase 3 · tracciati</span>
-      </header>
-
-      <div className={styles.toolbar}>
-        <button onClick={() => setPaused(!paused)}>{paused ? '▶ Riprendi' : '❚❚ Pausa'}</button>
-        <button onClick={() => setSpeed(speed === 1 ? 0.25 : 1)} className={speed !== 1 ? styles.on : ''}>
-          {speed === 1 ? 'Rallenty 0.25×' : 'Velocità 1×'}
-        </button>
-        <button onClick={reset}>↺ Reset</button>
+      <div className={styles.stage}>
+        <Suspense fallback={null}>
+          <HeartScene />
+        </Suspense>
       </div>
 
-      <nav className={styles.tabs} role="tablist">
-        {TABS.map(([id, label]) => (
+      <header className={styles.topbar}>
+        <div className={styles.brand}>
+          <h1>CardioSim 3D</h1>
+        </div>
+        <div className={styles.actions}>
+          <button onClick={() => setPaused(!paused)} aria-label={paused ? 'Riprendi' : 'Pausa'}>
+            {paused ? '▶' : '❚❚'}
+          </button>
           <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            className={tab === id ? styles.tabOn : ''}
-            onClick={() => setTab(id)}
+            onClick={() => setSpeed(speed === 1 ? 0.25 : 1)}
+            className={speed !== 1 ? styles.on : ''}
+            aria-label="Rallenty"
           >
+            {speed === 1 ? '0.25×' : '1×'}
+          </button>
+          <button onClick={reset} aria-label="Reset">
+            ↺
+          </button>
+        </div>
+      </header>
+
+      <nav className={styles.views} aria-label="Viste">
+        {VIEWS.map(([id, label]) => (
+          <button key={id} className={preset === id ? styles.on : ''} onClick={() => setPreset(id)}>
             {label}
           </button>
         ))}
       </nav>
 
-      <main className={styles.main}>
-        <ChartsView tab={tab} />
-      </main>
-
-      <footer className={styles.footer}>
-        Modello a parametri concentrati a scopo didattico. Le approssimazioni sono elencate nel README.
-      </footer>
+      <BottomSheet
+        level={level}
+        onLevel={setLevel}
+        header={
+          <nav className={styles.tabs} role="tablist">
+            {TABS.map(([id, label]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={tab === id}
+                className={tab === id ? styles.tabOn : ''}
+                onClick={() => {
+                  setTab(id);
+                  if (level === 0 && id !== 'monitor') setLevel(1);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        }
+      >
+        <SheetContent tab={tab} height={contentHeight} />
+      </BottomSheet>
     </div>
   );
 }
