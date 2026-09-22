@@ -97,6 +97,8 @@ export function App() {
   const setSpeed = useSimulation((s) => s.setSpeed);
   const reset = useSimulation((s) => s.reset);
   const setPreset = useView((s) => s.setPreset);
+  const quality = useView((s) => s.quality);
+  const setQuality = useView((s) => s.setQuality);
   const preset = useView((s) => s.preset);
   const [tab, setTab] = useState<Tab>('monitor');
   const [level, setLevel] = useState<SheetLevel>(0);
@@ -135,6 +137,13 @@ export function App() {
             aria-label="Rallenty"
           >
             {speed === 1 ? '0.25×' : '1×'}
+          </button>
+          <button
+            onClick={() => setQuality(quality === 'alta' ? 'media' : quality === 'media' ? 'bassa' : 'alta')}
+            aria-label={`Qualità grafica ${quality}`}
+            title="Qualità grafica"
+          >
+            {quality === 'alta' ? 'HQ' : quality === 'media' ? 'MQ' : 'LQ'}
           </button>
           <button onClick={reset} aria-label="Reset">
             ↺

@@ -27,16 +27,22 @@ export function HemodynamicTable() {
     ['Pressione pericardica', n(b.periMean, 1), 'mmHg'],
   ];
   return (
-    <table className={styles.table}>
-      <tbody>
-        {rows.map(([k, v, u]) => (
-          <tr key={k}>
-            <th scope="row">{k}</th>
-            <td>{v}</td>
-            <td className={styles.unit}>{u}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <>
+      <table className={styles.table}>
+        <tbody>
+          {rows.map(([k, v, u]) => (
+            <tr key={k}>
+              <th scope="row">{k}</th>
+              <td>{v}</td>
+              <td className={styles.unit}>{u}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className={styles.credits}>
+        Anatomia 3D: BodyParts3D, © The Database Center for Life Science, licenza CC Attribution 4.0
+        International. Epicardio ventricolare ricostruito dalle cavità reali (vedi README).
+      </p>
+    </>
   );
 }

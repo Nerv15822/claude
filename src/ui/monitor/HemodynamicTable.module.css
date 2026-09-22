@@ -24,3 +24,10 @@
 .wait {
   color: var(--muted);
 }
+
+.credits {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}

@@ -1,16 +1,19 @@
 import { Environment, Lightformer, OrbitControls, PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ACESFilmicToneMapping, Vector3 } from 'three';
+import { ACESFilmicToneMapping, NoToneMapping, Vector3 } from 'three';
+import { Effects } from './Effects';
+import { DETAIL } from './heart/heartMaterial';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { LONG_AXIS } from './heart/anatomy';
+import { AnatomicalHeart } from './heart/AnatomicalHeart';
 import { GlbHeart } from './heart/GlbHeart';
 import { GLB_URL } from './heart/glbNaming';
 import { HeartMesh } from './heart/HeartMesh';
 import { useView, type ViewPreset } from './viewStore';
 
 /** Centro dell'anatomia (cm). */
-const CENTER = new Vector3(0.6, 2.4, -0.6);
+const CENTER = new Vector3(0, 1.2, 0);
 
 /** Direzione della camera per le viste predefinite. */
 function presetDirection(v: ViewPreset): Vector3 {
@@ -68,8 +71,19 @@ export function HeartScene() {
   const controls = useRef<OrbitControlsImpl | null>(null);
   const [dpr, setDpr] = useState(Math.min(window.devicePixelRatio, 2));
   const quality = useView((s) => s.quality);
+  const setQuality = useView((s) => s.setQuality);
+  const autoDowngrade = useCallback(() => {
+    if (quality === 'alta') setQuality('media');
+    else if (quality === 'media') setQuality('bassa');
+  }, [quality, setQuality]);
+  useEffect(() => {
+    DETAIL.value = quality === 'bassa' ? 0 : 1;
+  }, [quality]);
   const [ready, setReady] = useState(false);
   const onReady = useCallback(() => setReady(true), []);
+  // Priorità: GLB esterno → modello anatomico BodyParts3D → cuore procedurale
+  const [anatomyFailed, setAnatomyFailed] = useState(false);
+  const onAnatomyError = useCallback(() => setAnatomyFailed(true), []);
   const cell = quality === 'alta' ? 0.2 : quality === 'media' ? 0.26 : 0.34;
   // Se esiste public/models/heart.glb si usa il modello anatomico esterno, altrimenti quello procedurale.
   const [glb, setGlb] = useState<boolean | null>(null);
@@ -87,12 +101,19 @@ export function HeartScene() {
       <Canvas
         dpr={dpr}
         camera={{ position: [0.6, 3, 60], fov: 35, near: 1, far: 400 }}
-        gl={{ antialias: true, powerPreference: 'high-performance', toneMapping: ACESFilmicToneMapping }}
+        gl={{
+          antialias: quality === 'bassa',
+          powerPreference: 'high-performance',
+          toneMapping: quality === 'bassa' ? ACESFilmicToneMapping : NoToneMapping,
+        }}
+        key={quality === 'bassa' ? 'lq' : 'hq'}
         style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
       >
         <PerformanceMonitor
           onIncline={() => setDpr((d) => Math.min(d + 0.25, Math.min(window.devicePixelRatio, 2)))}
           onDecline={() => setDpr((d) => Math.max(d - 0.25, 1))}
+          flipflops={3}
+          onFallback={() => autoDowngrade()}
         />
         <Environment resolution={256} frames={1}>
           <Lightformer
@@ -129,13 +150,19 @@ export function HeartScene() {
             rotation-x={-Math.PI / 2}
           />
         </Environment>
-        <directionalLight position={[6, 14, 18]} intensity={1.2} color="#fff6ee" />
+        {/* Scialitica: luce principale calda dall'alto-avanti, contro-luce fredda e riempimento */}
+        <directionalLight position={[6, 14, 18]} intensity={1.3} color="#fff6ee" />
+        <directionalLight position={[-10, 6, -16]} intensity={0.9} color="#cfdcff" />
+        <directionalLight position={[12, -6, -10]} intensity={0.5} color="#ffd9cc" />
+        <hemisphereLight args={['#fff1e6', '#2a1210', 0.35]} />
+        <Effects quality={quality} />
         {glb === true && (
           <Suspense fallback={null}>
             <GlbHeart />
           </Suspense>
         )}
-        {glb === false && <HeartMesh cell={cell} onReady={onReady} />}
+        {glb === false && !anatomyFailed && <AnatomicalHeart onReady={onReady} onError={onAnatomyError} />}
+        {glb === false && anatomyFailed && <HeartMesh cell={cell} onReady={onReady} />}
         <OrbitControls
           ref={controls}
           target={CENTER}

@@ -36,6 +36,8 @@ export function createDeformState(): DeformState {
 
 const ratio = (v: number, ref: number, wall: number) => Math.max(0.2, (Math.max(v, 0) + wall) / (ref + wall));
 
+export type Volumes = typeof REF_VOLUME;
+
 export function computeDeform(
   out: DeformState,
   vLV: number,
@@ -45,15 +47,16 @@ export function computeDeform(
   pAo: number,
   pPA: number,
   eV: number,
+  ref: Volumes = REF_VOLUME,
 ): void {
-  const sl = ratio(vLV, REF_VOLUME.lv, WALL_VOLUME.lv);
-  const sr = ratio(vRV, REF_VOLUME.rv, WALL_VOLUME.rv);
+  const sl = ratio(vLV, ref.lv, WALL_VOLUME.lv);
+  const sr = ratio(vRV, ref.rv, WALL_VOLUME.rv);
   out.lvAx = Math.pow(sl, 0.3);
   out.lvRad = Math.pow(sl, 0.35);
   out.rvAx = Math.pow(sr, 0.3);
   out.rvRad = Math.pow(sr, 0.35);
-  out.la = Math.cbrt(ratio(vLA, REF_VOLUME.la, WALL_VOLUME.la));
-  out.ra = Math.cbrt(ratio(vRA, REF_VOLUME.ra, WALL_VOLUME.ra));
+  out.la = Math.cbrt(ratio(vLA, ref.la, WALL_VOLUME.la));
+  out.ra = Math.cbrt(ratio(vRA, ref.ra, WALL_VOLUME.ra));
   out.ao = 1 + VESSEL.aoK * (pAo - VESSEL.aoRef);
   out.pa = 1 + VESSEL.paK * (pPA - VESSEL.paRef);
   out.twist = MAX_TWIST * Math.min(Math.max(eV, 0), 1);

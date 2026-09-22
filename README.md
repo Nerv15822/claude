@@ -66,27 +66,58 @@ PEEP, tachicardia, FA, BAV III, DIV (Qp/Qs > 1.5).
 
 ## Cuore 3D (`src/scene`)
 
-- **Anatomia procedurale** (`scene/heart/anatomy.ts`), descritta come campo di distanza (SDF) in cm:
-  - VS e VD con asse lungo orientato in avanti, in basso e a sinistra, infundibolo del VD, AS e AD con le
-    auricole;
-  - aorta con radice, arco e tronchi sovraortici, tronco polmonare con biforcazione, cave, quattro vene
-    polmonari; i vasi sono sezionati con estremità piatte;
-  - la mesh è estratta con _surface nets_ a banda stretta in un Web Worker (≈ 0.5–1 s);
-  - coronarie (IVA, IVP, coronaria destra, circonflessa) tracciate automaticamente nei solchi;
-  - grasso epicardico colorato lungo solco AV, solchi interventricolari e radice dei vasi.
+### Modello anatomico reale (predefinito)
+
+Il cuore mostrato deriva da **BodyParts3D**, mesh segmentate da dati TC di un soggetto adulto:
+
+> BodyParts3D, © The Database Center for Life Science licensed under CC Attribution 4.0 International.
+
+`scripts/build-anatomy.ts` produce offline `public/models/heart-bp3d.{json,bin}` (≈ 1.3 MB, circa
+0.9 MB gzip):
+
+1. carica le mesh reali (pareti atriali, cavità ventricolari, aorta con i tronchi sovraortici, tronco
+   polmonare con i rami, cave, vene polmonari, coronarie e vene cardiache);
+2. calcola campi di distanza con segno su una griglia a 1 mm, chiudendo i piccoli fori con una chiusura
+   morfologica;
+3. **ricostruisce l'epicardio ventricolare**, che BodyParts3D non contiene: offset della cavità reale del
+   VS di 10 mm (6.5 mm all'apice) e del VD di 4 mm. Controllo di coerenza: le coronarie reali, che nella
+   realtà decorrono sull'epicardio, cadono sulla superficie ricostruita (distanza mediana −0.5 mm, p10–p90
+   da −1.4 a +2.0 mm);
+4. unisce la ricostruzione ad atri e vasi, sezionati con estremità aperte;
+5. estrae la superficie, la decima con meshoptimizer e quantizza gli attributi;
+6. calcola per ogni vertice i pesi di regione per la deformazione, i riferimenti anatomici (apice, asse
+   lungo, centri atriali, volumi delle cavità) e la distribuzione del grasso epicardico, che segue coronarie,
+   vene, solco AV e radice dei vasi.
+
+Rigenerazione, con gli OBJ di `partof_BP3D_4.0_obj_99` scaricati da https://dbarchive.biosciencedbc.jp/en/bodyparts3d/:
+
+```bash
+npx tsx scripts/build-anatomy.ts /percorso/partof_BP3D_4.0_obj_99
+```
+
+Il cuore procedurale basato su SDF (`scene/heart/anatomy.ts`) resta come fallback se l'asset non è disponibile.
+
+### Rendering
+
 - **Battito guidato dal motore**, nel vertex shader. Ogni vertice ha pesi di regione (VS, VD, AS, AD,
   aorta, AP, vene). Il fattore di scala epicardico è `S = (V + Vparete)/(Vrif + Vparete)`, perché il
-  miocardio è incomprimibile.
+  miocardio è incomprimibile; i volumi di riferimento sono quelli delle cavità reali del modello.
   - Ventricoli: accorciamento assiale ancorato all'apice (quindi discesa dell'anello AV) e radiale, più la
     torsione del VS proporzionale all'attivazione.
   - Atri: scala isotropa.
   - Aorta e AP: distensione radiale proporzionale alla pressione.
-- **Materiale:** `MeshPhysicalMaterial` con clearcoat (superficie umida), sheen (diffusione superficiale),
-  colori per vertice. Illuminazione da studio/sala operatoria con lightformer procedurali (nessun HDRI
-  da scaricare), tone mapping ACES, DPR adattivo (`PerformanceMonitor`).
-- **Interfaccia:** cuore a pieno schermo, viste predefinite (anteriore, laterale sinistra, posteriore,
-  dall'apice, dalla base), OrbitControls touch. Il bottom sheet trascinabile ha tre livelli e diventa
-  un pannello laterale in orizzontale.
+- **Superficie:** `MeshPhysicalMaterial` (clearcoat "umido", sheen) più dettaglio procedurale nel fragment
+  shader, calcolato sulle coordinate del tessuto non deformato così la trama segue il battito:
+  - striature lungo la direzione delle fibre epicardiche (elica a circa −60°);
+  - vasellini subepicardici e chiazzature;
+  - lobuli del grasso, più lucidi;
+  - bordo traslucido rossastro come approssimazione della diffusione sottocutanea.
+- **Illuminazione e post-processing:** tipo sala operatoria (lightformer procedurali, luce principale
+  calda, controluce fredda), N8AO (occlusione ambientale), bloom leggero, SMAA, vignettatura, tone mapping
+  ACES. Tre livelli di qualità (HQ/MQ/LQ), con declassamento automatico se il frame time peggiora e DPR
+  adattivo.
+- **Interfaccia:** cuore a pieno schermo, viste predefinite, OrbitControls touch, bottom sheet a tre
+  livelli (pannello laterale in orizzontale).
 
 ### Usare un modello anatomico GLB
 
@@ -148,8 +179,12 @@ Da leggere prima di usare il simulatore per la didattica.
 - **Curva di Frank-Starling:** calcolata in apnea variando istantaneamente la volemia (8 s di transitorio
   per punto). Il punto di lavoro è misurato con la ventilazione corrente, quindi può discostarsi di poco.
 - **Onde della CVP:** l'escursione a-v del modello (~8 mmHg) è maggiore di quella clinica (3–5 mmHg).
-- **Anatomia 3D:** le proporzioni sono plausibili ma schematiche. La superficie è solo epicardica: cavità
-  endocardiche, setto interno e valvole arrivano nella Fase 5.
+- **Anatomia 3D:** atri, vasi, coronarie e cavità vengono da un soggetto reale (BodyParts3D). L'epicardio
+  ventricolare è invece **ricostruito** per offset delle cavità con spessori di parete tipici (VS 10 mm,
+  VD 4 mm), non misurato. Il grasso epicardico è distribuito in modo euristico (vicino ai vasi, solco AV,
+  radice dei vasi). La mesh è decimata a circa 38 000 vertici per iPhone.
+- **Dettaglio di superficie:** fibre, vasellini e lobuli del grasso sono procedurali (rumore), non
+  fotografati; la direzione delle fibre è un'elica a −60° semplificata.
 - **Deformazione 3D:** è cinematica, non meccanica, e non viene da un modello a elementi finiti. Le frazioni
   assiale e radiale dell'accorciamento (esponenti 0.3/0.35), la torsione massima (≈ 11°) e la distensibilità
   visiva dei vasi sono scelte per plausibilità. I volumi delle camere sono invece quelli del motore. Con un
