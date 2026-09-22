@@ -10,14 +10,22 @@
   --pap: #ffd24d;
   --pcwp: #ff9f43;
   --spo2: #5ee7ff;
+  --muted-strong: #c5ceda;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   color-scheme: dark;
 }
-* { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; }
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
 body {
   background: var(--bg);
   color: var(--text);

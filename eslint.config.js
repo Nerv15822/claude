@@ -25,8 +25,14 @@ export default tseslint.config(
         'error',
         {
           patterns: [
-            { group: ['react', 'react-dom', 'three', '@react-three/*', 'zustand'], message: 'Il motore fisiologico non può dipendere da librerie grafiche/UI.' },
-            { group: ['@scene/*', '@ui/*', '@store/*', '../scene/*', '../ui/*', '../store/*'], message: 'Il motore fisiologico non può importare scene/ui/store.' },
+            {
+              group: ['react', 'react-dom', 'three', '@react-three/*', 'zustand'],
+              message: 'Il motore fisiologico non può dipendere da librerie grafiche/UI.',
+            },
+            {
+              group: ['@scene/*', '@ui/*', '@store/*', '../scene/*', '../ui/*', '../store/*'],
+              message: 'Il motore fisiologico non può importare scene/ui/store.',
+            },
           ],
         },
       ],
