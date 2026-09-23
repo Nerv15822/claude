@@ -32,7 +32,8 @@ const REGOLE: Regola[] = [
           id: 'ipotensione',
           livello: 'critico',
           titolo: `Ipotensione grave (PAM ${b.aoMean.toFixed(0)} mmHg)`,
-          testo: 'Perfusione d’organo e coronarica compromesse. Identifica il determinante: precarico, postcarico, contrattilità o frequenza?',
+          testo:
+            'Perfusione d’organo e coronarica compromesse. Identifica il determinante: precarico, postcarico, contrattilità o frequenza?',
         }
       : null,
   ({ caseId, b }) =>
@@ -45,13 +46,17 @@ const REGOLE: Regola[] = [
         }
       : null,
   ({ caseId, b }) =>
-    (caseId === 'stenosi-aortica' || caseId === 'stenosi-mitralica' || caseId === 'hocm' || caseId === 'hfpef') &&
+    (caseId === 'stenosi-aortica' ||
+      caseId === 'stenosi-mitralica' ||
+      caseId === 'hocm' ||
+      caseId === 'hfpef') &&
     b.hr > 100
       ? {
           id: 'tachicardia-critica',
           livello: 'attenzione',
           titolo: `Tachicardia (${b.hr.toFixed(0)} bpm) in una patologia dipendente dal riempimento`,
-          testo: 'La diastole si accorcia: riempimento e perfusione coronarica si riducono. Tratta la causa (ipovolemia, dolore, ipotensione) e considera l’esmololo.',
+          testo:
+            'La diastole si accorcia: riempimento e perfusione coronarica si riducono. Tratta la causa (ipovolemia, dolore, ipotensione) e considera l’esmololo.',
         }
       : null,
   ({ caseId, p }) =>
@@ -60,7 +65,8 @@ const REGOLE: Regola[] = [
           id: 'sa-vasodilatazione',
           livello: 'attenzione',
           titolo: 'SA: vasodilatazione',
-          testo: 'Con un orifizio fisso la gittata non può aumentare: ridurre le RVS abbassa la pressione diastolica, non il lavoro del VS.',
+          testo:
+            'Con un orifizio fisso la gittata non può aumentare: ridurre le RVS abbassa la pressione diastolica, non il lavoro del VS.',
         }
       : null,
   ({ caseId, b, p }) =>
@@ -69,7 +75,8 @@ const REGOLE: Regola[] = [
           id: 'hocm-inotropi',
           livello: 'critico',
           titolo: `CMIO: inotropo in corso (gradiente ${b.avPeakGradient.toFixed(0)} mmHg)`,
-          testo: 'L’inotropismo riduce il volume del VS e peggiora il SAM: sospendi e usa volume, vasocostrittore e β-bloccante.',
+          testo:
+            'L’inotropismo riduce il volume del VS e peggiora il SAM: sospendi e usa volume, vasocostrittore e β-bloccante.',
         }
       : null,
   ({ caseId, p }) =>
@@ -88,7 +95,8 @@ const REGOLE: Regola[] = [
           id: 'ppv-ostruzione',
           livello: 'attenzione',
           titolo: 'Ventilazione a pressione positiva',
-          testo: 'La pressione intratoracica positiva riduce ulteriormente il ritorno venoso (e aumenta il postcarico del VD).',
+          testo:
+            'La pressione intratoracica positiva riduce ulteriormente il ritorno venoso (e aumenta il postcarico del VD).',
         }
       : null,
   ({ caseId, p, b }) =>
