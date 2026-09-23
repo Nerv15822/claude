@@ -1,0 +1,33 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 5px 6px 5px 0;
+}
+.table td {
+  padding: 5px 0;
+}
+.table tr + tr {
+  border-top: 1px solid var(--border);
+}
+.unit {
+  color: var(--muted);
+  text-align: right;
+  font-size: 11px;
+}
+.wait {
+  color: var(--muted);
+}
+
+.credits {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}

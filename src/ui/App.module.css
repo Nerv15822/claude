@@ -1,0 +1,140 @@
+.app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 30%, #1a1d26 0%, #07090d 60%, #030407 100%);
+}
+.stage {
+  position: absolute;
+  inset: 0;
+}
+@media (orientation: landscape) and (min-width: 700px) {
+  .stage {
+    right: min(46vw, 560px);
+  }
+}
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(8px + var(--safe-top)) calc(12px + var(--safe-right)) 0 calc(12px + var(--safe-left));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 4;
+}
+@media (orientation: landscape) and (min-width: 700px) {
+  .topbar {
+    right: min(46vw, 560px);
+  }
+}
+.brand h1 {
+  font-size: 17px;
+  margin: 0;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+.actions button,
+.views button {
+  min-width: 44px;
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 22, 30, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 0 10px;
+}
+.actions button.on,
+.views button.on {
+  border-color: rgba(77, 163, 255, 0.8);
+  background: rgba(77, 163, 255, 0.2);
+}
+.views {
+  position: absolute;
+  top: calc(100px + var(--safe-top));
+  left: calc(12px + var(--safe-left));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 4;
+}
+.views button {
+  font-size: 12px;
+  min-height: 34px;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  border-radius: 999px;
+  padding: 7px 13px;
+  min-height: 36px;
+}
+.tabs button.tabOn {
+  background: rgba(77, 163, 255, 0.2);
+  border-color: rgba(77, 163, 255, 0.6);
+  color: #fff;
+}
+.note {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 4px;
+  line-height: 1.45;
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.caseBadge {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: calc(100vw - 262px);
+  border: 1px solid rgba(255, 110, 110, 0.45);
+  background: rgba(40, 10, 12, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 10px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.caseBadge small {
+  font-weight: 400;
+  font-size: 11px;
+  color: #ffb3a8;
+}

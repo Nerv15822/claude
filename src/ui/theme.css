@@ -1,0 +1,75 @@
+:root {
+  --bg: #05070a;
+  --panel: rgba(18, 22, 30, 0.72);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8edf3;
+  --muted: #8a96a8;
+  --ecg: #3ddc84;
+  --abp: #ff4d4d;
+  --cvp: #4da3ff;
+  --pap: #ffd24d;
+  --pcwp: #ff9f43;
+  --spo2: #5ee7ff;
+  --muted-strong: #c5ceda;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Confronto a schermo diviso (etichette sopra la scena 3D) */
+.cs-compare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  z-index: 1;
+}
+.cs-compare span {
+  justify-self: end;
+  margin-right: 10px;
+  align-self: start;
+  margin-top: calc(108px + var(--safe-top));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+  background: rgba(10, 12, 18, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.cs-compare span:last-child {
+  justify-self: start;
+  margin: calc(108px + var(--safe-top)) 0 0 10px;
+  color: #ffb3a8;
+  border-color: rgba(255, 110, 110, 0.45);
+}
+.cs-compare i {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 255, 255, 0.18) 20%,
+    rgba(255, 255, 255, 0.18) 80%,
+    transparent
+  );
+}
