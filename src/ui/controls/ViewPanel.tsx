@@ -1,4 +1,5 @@
 import { useView, type ParticleColor, type SectionPlane, type ViewMode } from '@scene/viewStore';
+import { useSimulation } from '@store/simulation';
 import styles from './Controls.module.css';
 import { Segmented, Slider } from './Slider';
 
@@ -21,6 +22,8 @@ const DESCRIPTIONS: Record<ViewMode, string> = {
 
 /** Controlli della visualizzazione 3D: modalità, piani di sezione, particelle di flusso. */
 export function ViewPanel() {
+  const compare = useSimulation((s) => s.compare);
+  const setCompare = useSimulation((s) => s.setCompare);
   const v = useView();
   return (
     <div className={styles.panel}>
@@ -33,6 +36,22 @@ export function ViewPanel() {
         ))}
       </div>
       <p className={styles.hint}>{DESCRIPTIONS[v.mode]}</p>
+
+      <Segmented
+        label="Confronto con il cuore normale"
+        value={compare ? 'on' : 'off'}
+        options={[
+          ['off', 'Solo paziente'],
+          ['on', 'Schermo diviso'],
+        ]}
+        onChange={(x) => setCompare(x === 'on')}
+      />
+      {compare && (
+        <p className={styles.hint}>
+          A sinistra un cuore normale simulato in parallelo, a destra il paziente: stessa vista, stessa
+          modalità, stesso istante. Il post-processing è disattivato per mantenere la fluidità.
+        </p>
+      )}
 
       {v.mode === 'sezione' && (
         <>

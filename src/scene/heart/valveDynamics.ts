@@ -1,6 +1,6 @@
 import { F } from '@physiology/engine';
 import type { Params } from '@physiology/params';
-import { sampleBuffer } from '@store/sampleBuffer';
+import { sampleBuffer as defaultBuffer, type SampleBuffer } from '@store/sampleBuffer';
 
 /** Valvole: 0 mitrale, 1 aortica, 2 tricuspide, 3 polmonare. */
 const FLOW_FIELDS = [F.qMV, F.qAV, F.qTV, F.qPV];
@@ -27,10 +27,12 @@ const smooth = (x: number) => {
 export class ValveDynamics {
   readonly open = [0, 0, 0, 0];
 
+  constructor(private readonly buffer: SampleBuffer = defaultBuffer) {}
+
   update(dt: number, p: Params): void {
     const valves = [p.mitral, p.aortic, p.tricuspid, p.pulmonic];
     for (let v = 0; v < 4; v++) {
-      const q = sampleBuffer.latest(FLOW_FIELDS[v]!);
+      const q = this.buffer.latest(FLOW_FIELDS[v]!);
       const cfg = valves[v]!;
       const maxOpen = Math.min(1, Math.max(0.12, Math.sqrt(cfg.area / NORMAL_AREA[v]!)));
       const gap = Math.min(0.35, Math.sqrt(Math.max(cfg.regurgitantArea, 0)) * 0.35);

@@ -1,7 +1,9 @@
 import { Environment, Lightformer, OrbitControls, PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { ACESFilmicToneMapping, NoToneMapping, Vector3 } from 'three';
+import { Suspense, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { ACESFilmicToneMapping, NoToneMapping, PerspectiveCamera, Vector3, type Group } from 'three';
+import { useSimulation } from '@store/simulation';
+import { normalSource } from './heart/heartSource';
 import { Effects } from './Effects';
 import { AnatomyLabel } from './AnatomyLabel';
 import { DETAIL } from './heart/heartMaterial';
@@ -48,15 +50,50 @@ function framing(aspect: number, fovDeg: number): { distance: number; yShift: nu
   return { distance, yShift: aspect < 1 ? -distance * Math.tan(half) * 0.32 : 0 };
 }
 
+/**
+ * Confronto a schermo diviso: la stessa camera (stessa vista, stessa rotazione) rende il cuore normale
+ * nella metà sinistra e il paziente nella metà destra. Sostituisce il rendering automatico (priorità 1).
+ */
+function SplitRender({ left, right }: { left: RefObject<Group | null>; right: RefObject<Group | null> }) {
+  useFrame(({ gl, scene, camera, size }) => {
+    const cam = camera as PerspectiveCamera;
+    const aspect = cam.aspect;
+    const half = Math.floor(size.width / 2);
+    gl.autoClear = false;
+    gl.setScissorTest(true);
+    for (let i = 0; i < 2; i++) {
+      if (left.current) left.current.visible = i === 0;
+      if (right.current) right.current.visible = i === 1;
+      const x = i === 0 ? 0 : half;
+      const w = i === 0 ? half : size.width - half;
+      gl.setViewport(x, 0, w, size.height);
+      gl.setScissor(x, 0, w, size.height);
+      cam.aspect = w / size.height;
+      cam.updateProjectionMatrix();
+      gl.clear();
+      gl.render(scene, cam);
+    }
+    if (left.current) left.current.visible = true;
+    if (right.current) right.current.visible = true;
+    cam.aspect = aspect;
+    cam.updateProjectionMatrix();
+    gl.setScissorTest(false);
+    gl.setViewport(0, 0, size.width, size.height);
+    gl.autoClear = true;
+  }, 1);
+  return null;
+}
+
 function CameraRig({ controls }: { controls: React.RefObject<OrbitControlsImpl | null> }) {
   const preset = useView((s) => s.preset);
+  const compare = useSimulation((s) => s.compare);
   const nonce = useView((s) => s.nonce);
   const sectionView = useView((s) => s.sectionView);
   const { camera, size } = useThree();
   const goal = useRef<Vector3 | null>(null);
   const goalTarget = useRef(new Vector3());
   useEffect(() => {
-    const { distance, yShift } = framing(size.width / size.height, 35);
+    const { distance, yShift } = framing((compare ? 0.5 : 1) * (size.width / size.height), 35);
     const shift = new Vector3(0, yShift, 0);
     const sv = useView.getState().sectionView;
     const center = preset === 'sezione' && sv ? new Vector3(...sv.center) : CENTER;
@@ -66,7 +103,7 @@ function CameraRig({ controls }: { controls: React.RefObject<OrbitControlsImpl |
       .clone()
       .add(presetDirection(preset).multiplyScalar(distance * k))
       .add(shift);
-  }, [preset, nonce, size.width, size.height, sectionView]);
+  }, [preset, nonce, size.width, size.height, sectionView, compare]);
   useFrame((_, dt) => {
     if (!goal.current) return;
     const k = 1 - Math.exp(-dt * 6);
@@ -91,6 +128,9 @@ export function HeartScene() {
   useEffect(() => {
     DETAIL.value = quality === 'bassa' ? 0 : 1;
   }, [quality]);
+  const compare = useSimulation((s) => s.compare);
+  const normalRef = useRef<Group>(null);
+  const patientRef = useRef<Group>(null);
   const [ready, setReady] = useState(false);
   const onReady = useCallback(() => setReady(true), []);
   // Priorità: GLB esterno → modello anatomico BodyParts3D → cuore procedurale
@@ -117,9 +157,10 @@ export function HeartScene() {
           antialias: quality === 'bassa',
           powerPreference: 'high-performance',
           stencil: true,
-          toneMapping: quality === 'bassa' ? ACESFilmicToneMapping : NoToneMapping,
+          // Senza post-processing (qualità bassa, confronto) il tone mapping è nel renderer
+          toneMapping: quality === 'bassa' || compare ? ACESFilmicToneMapping : NoToneMapping,
         }}
-        key={quality === 'bassa' ? 'lq' : 'hq'}
+        key={`${quality === 'bassa' ? 'lq' : 'hq'}-${compare ? 'cmp' : 'one'}`}
         style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
         onCreated={({ gl }) => {
           gl.localClippingEnabled = true;
@@ -172,13 +213,18 @@ export function HeartScene() {
         <directionalLight position={[-10, 6, -16]} intensity={0.9} color="#cfdcff" />
         <directionalLight position={[12, -6, -10]} intensity={0.5} color="#ffd9cc" />
         <hemisphereLight args={['#fff1e6', '#2a1210', 0.35]} />
-        <Effects quality={quality} />
+        {compare ? <SplitRender left={normalRef} right={patientRef} /> : <Effects quality={quality} />}
         {glb === true && (
           <Suspense fallback={null}>
             <GlbHeart />
           </Suspense>
         )}
-        {glb === false && !anatomyFailed && <AnatomicalHeart onReady={onReady} onError={onAnatomyError} />}
+        {glb === false && !anatomyFailed && (
+          <AnatomicalHeart onReady={onReady} onError={onAnatomyError} groupRef={patientRef} />
+        )}
+        {glb === false && !anatomyFailed && compare && (
+          <AnatomicalHeart source={normalSource} groupRef={normalRef} />
+        )}
         {glb === false && anatomyFailed && <HeartMesh cell={cell} onReady={onReady} />}
         <OrbitControls
           ref={controls}
@@ -193,6 +239,13 @@ export function HeartScene() {
         <CameraRig controls={controls} />
         <AnatomyLabel />
       </Canvas>
+      {compare && (
+        <div className="cs-compare" aria-hidden="true">
+          <span>Normale</span>
+          <i />
+          <span>Paziente</span>
+        </div>
+      )}
       {!ready && !glb && (
         <div
           style={{

@@ -29,6 +29,8 @@ export interface HeartFrame {
   raCenter: readonly number[];
   /** Distanza base–apice (cm) */
   baseApexLength: number;
+  /** Setto interventricolare (centro e direzione VS→VD), se ricavato dalla geometria */
+  septum?: { center: readonly number[]; dir: readonly number[] };
   /** Centri delle valvole (mitrale, aortica, tricuspide, polmonare), se noti */
   valveCenters?: readonly (readonly number[])[];
   leaflets?: { valve: number; point: number[]; axis: number[] }[];
@@ -62,6 +64,15 @@ export const DETAIL = { value: 1 };
 
 const v3 = (a: readonly number[]) => new Vector3(a[0], a[1], a[2]);
 
+/** Direzione approssimata VS→VD (apici e, se noti, centri mitralico → tricuspidale), ⟂ asse lungo. */
+export function septumDirection(frame: HeartFrame): Vector3 {
+  const axis = v3(frame.longAxis).normalize();
+  const dir = v3(frame.rvApex).sub(v3(frame.lvApex));
+  const vc = frame.valveCenters;
+  if (vc && vc[0] && vc[2]) dir.add(v3(vc[2]).sub(v3(vc[0])).multiplyScalar(0.5));
+  return dir.addScaledVector(axis, -dir.dot(axis)).normalize();
+}
+
 export function createHeartUniforms(frame: HeartFrame = PROCEDURAL_FRAME): HeartUniforms {
   const hp: Vector3[] = [];
   const ha: Vector3[] = [];
@@ -72,13 +83,12 @@ export function createHeartUniforms(frame: HeartFrame = PROCEDURAL_FRAME): Heart
   }
   // Setto: direzione VS→VD perpendicolare all'asse lungo, centro a metà ventricolo
   const axis = v3(frame.longAxis).normalize();
-  const dir = v3(frame.rvApex).sub(v3(frame.lvApex));
-  const vc = frame.valveCenters;
-  if (vc && vc[0] && vc[2]) dir.add(v3(vc[2]).sub(v3(vc[0])).multiplyScalar(0.5));
-  dir.addScaledVector(axis, -dir.dot(axis)).normalize();
-  const septumC = v3(frame.lvApex)
-    .addScaledVector(axis, -0.5 * frame.baseApexLength)
-    .addScaledVector(dir, 2.4);
+  const dir = frame.septum ? v3(frame.septum.dir) : septumDirection(frame);
+  const septumC = frame.septum
+    ? v3(frame.septum.center)
+    : v3(frame.lvApex)
+        .addScaledVector(axis, -0.5 * frame.baseApexLength)
+        .addScaledVector(dir, 2);
   return {
     uAxis: { value: axis },
     uLvApex: { value: v3(frame.lvApex) },

@@ -40,7 +40,18 @@ export interface AnatomyAsset {
 
 const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 
-export async function loadAnatomy(): Promise<AnatomyAsset> {
+let cached: Promise<AnatomyAsset> | null = null;
+
+/** Carica il modello una sola volta (condiviso dai cuori del confronto). */
+export function loadAnatomy(): Promise<AnatomyAsset> {
+  cached ??= fetchAnatomy().catch((e: unknown) => {
+    cached = null;
+    throw e;
+  });
+  return cached;
+}
+
+async function fetchAnatomy(): Promise<AnatomyAsset> {
   const [metaRes, binRes] = await Promise.all([fetch(`${ASSET_BASE}.json`), fetch(`${ASSET_BASE}.bin`)]);
   if (!metaRes.ok || !binRes.ok) throw new Error('Modello anatomico non disponibile');
   const meta = (await metaRes.json()) as AnatomyMeta;

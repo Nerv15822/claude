@@ -291,3 +291,36 @@
   font-weight: 650;
   margin-bottom: 8px;
 }
+.compare {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0 10px;
+}
+.compare th,
+.compare td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.compare thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.compare tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+.compare small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.higher {
+  color: #ff9f43;
+}
+.lower {
+  color: #5ec8ff;
+}

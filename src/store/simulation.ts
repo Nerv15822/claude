@@ -9,7 +9,8 @@ import {
   type Morfologia,
 } from '../pathologies/index';
 import type { EngineStatus, FromWorker, ToWorker } from '../workers/protocol';
-import { sampleBuffer } from './sampleBuffer';
+import { refSampleBuffer, sampleBuffer } from './sampleBuffer';
+import { REF_OFFSET } from '../workers/protocol';
 
 interface SimulationState {
   /** Parametri obiettivo (quelli impostati dall'utente/preset; il motore li raggiunge gradualmente) */
@@ -25,6 +26,10 @@ interface SimulationState {
   caseId: string | null;
   severity: number;
   morphology: Morfologia;
+  /** Confronto affiancato con un cuore normale */
+  compare: boolean;
+  refBeat: BeatMetrics | null;
+  setCompare: (v: boolean) => void;
   setParams: (patch: ParamsPatch) => void;
   setPaused: (v: boolean) => void;
   setSpeed: (v: number) => void;
@@ -52,6 +57,13 @@ export const useSimulation = create<SimulationState>((set, get) => ({
   caseId: null,
   severity: 0.6,
   morphology: { ...MORFOLOGIA_NORMALE },
+  compare: false,
+  refBeat: null,
+  setCompare: (v) => {
+    refSampleBuffer.clear();
+    set({ compare: v, refBeat: null });
+    send({ type: 'compare', value: v });
+  },
   setParams: (patch) => {
     const next = cloneParams(get().params);
     applyPatch(next, patch);
@@ -103,14 +115,20 @@ export const useSimulation = create<SimulationState>((set, get) => ({
 export function startEngine(): void {
   if (worker) return;
   worker = new Worker(new URL('../workers/engine.worker.ts', import.meta.url), { type: 'module' });
+  // App in background (iPhone: cambio app, blocco schermo): il motore si ferma per risparmiare batteria
+  document.addEventListener('visibilitychange', () => {
+    send({ type: 'pause', value: document.hidden || useSimulation.getState().paused });
+  });
   worker.onmessage = (ev: MessageEvent<FromWorker>) => {
     const msg = ev.data;
     sampleBuffer.push(msg.samples, msg.count);
+    if (msg.refCount > 0) refSampleBuffer.push(msg.samples, msg.refCount, REF_OFFSET);
     send({ type: 'recycle', buffer: msg.samples.buffer as ArrayBuffer }, [msg.samples.buffer]);
     const patch: Partial<SimulationState> = {};
     if (msg.beat) patch.beat = msg.beat;
     if (msg.resp) patch.resp = msg.resp;
     if (msg.status) patch.status = msg.status;
+    if (msg.refBeat) patch.refBeat = msg.refBeat;
     if (msg.beat || msg.resp) {
       patch.simTime = msg.t;
       patch.realtime = msg.realtime;

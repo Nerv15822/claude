@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { CATEGORIE, PATHOLOGIES, PATHOLOGY_BY_ID, type Categoria, type Obiettivo } from '@pathologies/index';
 import { useSimulation } from '@store/simulation';
 import controls from '../controls/Controls.module.css';
+import { Segmented } from '../controls/Slider';
 import { AlertList } from './AlertList';
+import { CompareTable } from './CompareTable';
 import styles from './Clinical.module.css';
 
 const GOALS: readonly (readonly ['fc' | 'precarico' | 'postcarico' | 'contrattilita', string])[] = [
@@ -31,6 +33,8 @@ export function PathologyPanel() {
   const severity = useSimulation((s) => s.severity);
   const loadCase = useSimulation((s) => s.loadCase);
   const setSeverity = useSimulation((s) => s.setSeverity);
+  const compare = useSimulation((s) => s.compare);
+  const setCompare = useSimulation((s) => s.setCompare);
   const current = caseId ? PATHOLOGY_BY_ID[caseId] : undefined;
   const [cat, setCat] = useState<Categoria>(current?.categoria ?? 'valvolari');
   const list = PATHOLOGIES.filter((p) => p.categoria === cat);
@@ -91,6 +95,17 @@ export function PathologyPanel() {
           </div>
 
           <AlertList />
+
+          <Segmented
+            label="Confronto con il cuore normale"
+            value={compare ? 'on' : 'off'}
+            options={[
+              ['off', 'Solo paziente'],
+              ['on', 'Affiancato'],
+            ]}
+            onChange={(v) => setCompare(v === 'on')}
+          />
+          {compare && <CompareTable />}
 
           <h3>Fisiopatologia</h3>
           <p className={styles.text}>{k.fisiopatologia}</p>

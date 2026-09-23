@@ -17,6 +17,9 @@ npm run build      # build di produzione (dist/)
 Il deploy su GitHub Pages è automatico a ogni push su `main`
 (Settings → Pages → Source: **GitHub Actions**).
 
+**Installazione su iPhone:** aprire la demo in Safari → Condividi → «Aggiungi alla schermata Home». L'app si apre
+a schermo intero e, dopo la prima apertura, funziona anche offline (service worker `public/sw.js`).
+
 ## Stato
 
 - [x] Fase 1 — scaffold + deploy Pages
@@ -210,6 +213,15 @@ Fonti di modelli con licenza compatibile:
 Consiglio: in Blender separare le mesh per struttura, rinominarle come sopra, applicare le trasformazioni
 ed esportare in glTF binario con compressione Draco disattivata (il loader non include il decoder).
 
+## Confronto con il cuore normale (Fase 7)
+
+Con «Confronto → Schermo diviso» (tab Vista 3D o Patologie) il worker esegue in parallelo un secondo motore
+con i parametri normali, allo stesso passo temporale. La scena usa una sola camera e due viewport: a sinistra
+il cuore normale, a destra il paziente, con la stessa vista, modalità, sezione e istante. Una tabella
+affianca le grandezze chiave; gli scostamenti oltre il 15 % sono evidenziati. In questa modalità il
+post-processing è disattivato (tone mapping nel renderer) per restare fluidi su iPhone. Quando l'app va in
+background il motore si ferma.
+
 ## Approssimazioni del modello
 
 Da leggere prima di usare il simulatore per la didattica.
@@ -289,5 +301,9 @@ Da leggere prima di usare il simulatore per la didattica.
   alla superficie media del setto, pari a 0.12 cm per mL di variazione del volume settale del motore (max
   ±1.2 cm): un'amplificazione visiva per rendere visibile il "D-shape".
 - **Shunt nella scena:** DIA, DIV e dotto sono segmenti rettilinei posti dove i percorsi del flusso dei due
-  circuiti sono più vicini, non difetti anatomici modellati. Il pallone dell'IABP segue la centerline
+  circuiti sono più vicini, non difetti anatomici modellati. DIA e DIV sono spostati nel piano della sezione
+  4 camere (0.5 cm dietro il taglio). Le loro particelle sono disegnate in sovrimpressione, senza test di
+  profondità: il setto nel modello è integro e altrimenti coprirebbe il getto.
+- **Setto nella scena:** il centro del setto è ricavato dallo spazio tra le cavità reali di VS e VD a metà
+  ventricolo. Il pallone dell'IABP segue la centerline
   dell'aorta discendente del modello.

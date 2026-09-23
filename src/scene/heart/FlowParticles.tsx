@@ -13,18 +13,23 @@ import {
   type Points,
 } from 'three';
 import { F } from '@physiology/engine';
-import { sampleBuffer } from '@store/sampleBuffer';
-import { useSimulation } from '@store/simulation';
 import { useView } from '../viewStore';
 import type { FlowPath } from './anatomicalAsset';
 import { DEFORM_PARS } from './deformGlsl';
 import type { HeartUniforms } from './heartMaterial';
+import type { HeartSource } from './heartSource';
+import type { Quality } from '../viewStore';
 import { SHUNT_POINTS } from './shuntPaths';
 
 interface Props {
   paths: FlowPath[];
   uniforms: HeartUniforms;
   clip: Plane | null;
+  source: HeartSource;
+  /** Numero di particelle per qualità (default COUNT) */
+  counts?: Record<Quality, number>;
+  /** In sovrimpressione (senza test di profondità): shunt che attraversano il miocardio */
+  overlay?: boolean;
 }
 
 /** Ordine dei flussi referenziati dai percorsi (vedi scripts/build-anatomy.ts e shuntPaths.ts). */
@@ -132,7 +137,7 @@ void main() {
  * nel lume: v = Q/A, con Q dal motore (interpolato tra ingresso e uscita di ciascun segmento) e A dal
  * raggio locale del lume. Integrazione sul tempo simulato (rispetta pausa e rallenty).
  */
-export function FlowParticles({ paths, uniforms, clip }: Props) {
+export function FlowParticles({ paths, uniforms, clip, source, counts = COUNT, overlay = false }: Props) {
   const quality = useView((s) => s.quality);
   const colorMode = useView((s) => s.particleColor);
   const enabled = useView((s) => s.particles);
@@ -182,7 +187,7 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
   }, [paths]);
 
   const geo = useMemo(() => {
-    const count = COUNT[quality];
+    const count = counts[quality];
     const total = paths.reduce((a, p) => a + p.volume, 0);
     const aPath = new Float32Array(count);
     const aS = new Float32Array(count);
@@ -208,7 +213,7 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
     g.setAttribute('aSide', new BufferAttribute(aSide, 1));
     g.setDrawRange(0, count);
     return g;
-  }, [paths, quality, data]);
+  }, [paths, quality, data, counts]);
 
   const material = useMemo(
     () =>
@@ -217,6 +222,7 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
         fragmentShader: FRAGMENT,
         transparent: true,
         depthWrite: false,
+        depthTest: !overlay,
         blending: NormalBlending,
         clipping: true,
         uniforms: {
@@ -230,7 +236,7 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
           uSaO2: { value: 0.98 },
         },
       }),
-    [uniforms, data, gl],
+    [uniforms, data, gl, overlay],
   );
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => () => geo.dispose(), [geo]);
@@ -243,11 +249,12 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
   const last = useRef(-1);
   const flows = useMemo(() => new Float64Array(FLOWS.length), []);
   useFrame(() => {
-    if (sampleBuffer.head === 0) return;
-    const t = sampleBuffer.latest(F.t);
+    const buffer = source.buffer;
+    if (buffer.head === 0) return;
+    const t = buffer.latest(F.t);
     const dt = last.current < 0 ? 0 : Math.min(Math.max(t - last.current, 0), 0.05);
     last.current = t;
-    for (let i = 0; i < FLOWS.length; i++) flows[i] = sampleBuffer.latest(FLOWS[i]!);
+    for (let i = 0; i < FLOWS.length; i++) flows[i] = buffer.latest(FLOWS[i]!);
     const aS = geo.getAttribute('aS') as BufferAttribute;
     const aVel = geo.getAttribute('aVel') as BufferAttribute;
     const aPath = geo.getAttribute('aPath') as BufferAttribute;
@@ -272,11 +279,19 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
     const u = material.uniforms;
     u.uTime!.value = t;
     u.uDoppler!.value = colorMode === 'doppler' ? 1 : 0;
-    const beat = useSimulation.getState().beat;
-    if (beat) u.uSvO2!.value = beat.svo2;
-    u.uSaO2!.value = useSimulation.getState().params.oxygen.sao2;
+    const svo2 = source.svo2();
+    if (svo2 !== null) u.uSvO2!.value = svo2;
+    u.uSaO2!.value = source.params().oxygen.sao2;
   });
 
   if (!enabled) return null;
-  return <points ref={pointsRef} geometry={geo} material={material} renderOrder={4} frustumCulled={false} />;
+  return (
+    <points
+      ref={pointsRef}
+      geometry={geo}
+      material={material}
+      renderOrder={overlay ? 6 : 4}
+      frustumCulled={false}
+    />
+  );
 }

@@ -21,6 +21,12 @@ interface Pt {
   y: number;
 }
 
+/** Piano (n·p + c = distanza con segno) entro cui cercare il difetto: DIA e DIV nel piano 4 camere. */
+export interface ShuntPlane {
+  normal: readonly number[];
+  constant: number;
+}
+
 /** Punti di un tratto: percorsi di un lato con coppia di flussi (q0, q1) in `stages`. */
 function collect(paths: FlowPath[], side: number, stages: [number, number][], minY = -Infinity): Pt[] {
   const out: Pt[] = [];
@@ -36,6 +42,17 @@ function collect(paths: FlowPath[], side: number, stages: [number, number][], mi
     }
   }
   return out;
+}
+
+/** Distanza del difetto dietro il piano di taglio (cm): visibile nella sezione 4 camere. */
+const PLANE_DEPTH = 0.5;
+
+/** Porta il punto alla distanza PLANE_DEPTH dal piano, dal lato conservato. */
+function onPlane(p: Pt, plane: ShuntPlane): Pt {
+  const n = plane.normal;
+  const dist = n[0]! * p.p[0]! + n[1]! * p.p[1]! + n[2]! * p.p[2]! + plane.constant;
+  const k = PLANE_DEPTH - dist;
+  return { ...p, p: [p.p[0]! + n[0]! * k, p.p[1]! + n[1]! * k, p.p[2]! + n[2]! * k, p.p[3]!] };
 }
 
 function closest(a: Pt[], b: Pt[]): [Pt, Pt] | null {
@@ -68,11 +85,16 @@ function segment(a: Pt, b: Pt, radius: number, flow: number, volume: number): Fl
 /**
  * Costruisce i tre percorsi di shunt. `aorticValveY` limita i punti aortici all'arco (sede del dotto).
  */
-export function buildShuntPaths(paths: FlowPath[], aorticValveY: number): FlowPath[] {
+export function buildShuntPaths(paths: FlowPath[], aorticValveY: number, plane?: ShuntPlane): FlowPath[] {
   const out: FlowPath[] = [];
-  const asd = closest(collect(paths, 1, [[1, 3]]), collect(paths, 0, [[0, 2]]));
+  // Difetti settali posti nel piano 4 camere (dove si vedono in eco e in sezione), se possibile
+  const pair = (a: [number, number], b: [number, number]) => {
+    const pr = closest(collect(paths, 1, [a]), collect(paths, 0, [b]));
+    return pr && plane ? ([onPlane(pr[0], plane), onPlane(pr[1], plane)] as [Pt, Pt]) : pr;
+  };
+  const asd = pair([1, 3], [0, 2]);
   if (asd) out.push(segment(asd[0], asd[1], 0.45, SHUNT_FLOW.asd, 6));
-  const vsd = closest(collect(paths, 1, [[3, 5]]), collect(paths, 0, [[2, 4]]));
+  const vsd = pair([3, 5], [2, 4]);
   if (vsd) out.push(segment(vsd[0], vsd[1], 0.35, SHUNT_FLOW.vsd, 6));
   const pda = closest(
     collect(
