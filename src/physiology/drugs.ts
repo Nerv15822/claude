@@ -54,7 +54,8 @@ export const DRUGS: Record<InfusionDrug, DrugInfo> = {
     step: 0.005,
     tau: 60,
     ec50: 0.03,
-    meccanismo: 'V1: vasocostrizione sistemica senza effetto inotropo, circolo polmonare relativamente risparmiato.',
+    meccanismo:
+      'V1: vasocostrizione sistemica senza effetto inotropo, circolo polmonare relativamente risparmiato.',
   },
   esmolol: {
     nome: 'Esmololo',
@@ -81,7 +82,8 @@ export const DRUGS: Record<InfusionDrug, DrugInfo> = {
     step: 0.025,
     tau: 180,
     ec50: 0.4,
-    meccanismo: 'Inibitore PDE3 ("inodilatatore"): inotropismo, lusitropismo, vasodilatazione sistemica e polmonare.',
+    meccanismo:
+      'Inibitore PDE3 ("inodilatatore"): inotropismo, lusitropismo, vasodilatazione sistemica e polmonare.',
   },
 };
 

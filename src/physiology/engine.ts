@@ -200,8 +200,14 @@ export class CardioEngine {
   /** Applica subito i parametri obiettivo, senza transizione (test, analisi offline, reset). */
   settleParams(): void {
     for (const [g, k] of this.leaves) {
-      if (g === null) (this.base as unknown as Record<string, number>)[k] = (this.target as unknown as Record<string, number>)[k]!;
-      else (this.base as unknown as Record<string, Record<string, number>>)[g]![k] = (this.target as unknown as Record<string, Record<string, number>>)[g]![k]!;
+      if (g === null)
+        (this.base as unknown as Record<string, number>)[k] = (
+          this.target as unknown as Record<string, number>
+        )[k]!;
+      else
+        (this.base as unknown as Record<string, Record<string, number>>)[g]![k] = (
+          this.target as unknown as Record<string, Record<string, number>>
+        )[g]![k]!;
     }
     this.modulate(0);
   }
