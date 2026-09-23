@@ -97,7 +97,8 @@ function CameraRig({ controls }: { controls: React.RefObject<OrbitControlsImpl |
     const shift = new Vector3(0, yShift, 0);
     const sv = useView.getState().sectionView;
     const center = preset === 'sezione' && sv ? new Vector3(...sv.center) : CENTER;
-    const k = preset === 'sezione' ? 0.8 : 1;
+    // Nel confronto ogni cuore occupa metà schermo: inquadratura più stretta
+    const k = (preset === 'sezione' ? 0.8 : 1) * (compare ? 0.82 : 1);
     goalTarget.current.copy(center).add(shift);
     goal.current = center
       .clone()

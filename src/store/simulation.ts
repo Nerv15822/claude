@@ -129,7 +129,7 @@ export function startEngine(): void {
     if (msg.resp) patch.resp = msg.resp;
     if (msg.status) patch.status = msg.status;
     if (msg.refBeat) patch.refBeat = msg.refBeat;
-    if (msg.beat || msg.resp) {
+    if (msg.beat || msg.resp || msg.refBeat) {
       patch.simTime = msg.t;
       patch.realtime = msg.realtime;
       useSimulation.setState(patch);
