@@ -68,6 +68,13 @@ export interface BeatMetrics {
   pvr: number;
   /** SvO2 stimata (Fick semplificato), 0–1 */
   svo2: number;
+  /**
+   * Indici di Buckberg (mmHg·s per battito): DPTI = ∫(P_Ao − P_VS) in diastole (apporto
+   * coronarico al subendocardio), SPTI = ∫P_VS in sistole (domanda). EVR = DPTI/SPTI.
+   */
+  dpti: number;
+  spti: number;
+  evr: number;
 }
 
 export interface RespMetrics {
@@ -128,6 +135,9 @@ export function emptyBeatMetrics(): BeatMetrics {
     svr: 0,
     pvr: 0,
     svo2: 0,
+    dpti: 0,
+    spti: 0,
+    evr: 0,
   };
 }
 
@@ -186,6 +196,10 @@ export class BeatAnalyzer {
   private asd = 0;
   private vsd = 0;
   private pda = 0;
+  private dpti = 0;
+  private spti = 0;
+  private ejected = false;
+  private ejectionOver = false;
 
   /** Inizio di un nuovo battito (QRS). Ritorna true se un battito completo è stato finalizzato. */
   onQrs(y: Float64Array, aux: Float64Array, p: Params): boolean {
@@ -216,6 +230,8 @@ export class BeatAnalyzer {
     this.mvGradInt = this.mvGradTime = this.tvGradInt = this.tvGradTime = 0;
     this.pvGradInt = this.pvGradTime = this.pvGradPeak = 0;
     this.asd = this.vsd = this.pda = 0;
+    this.dpti = this.spti = 0;
+    this.ejected = this.ejectionOver = false;
   }
 
   /** Accumula un passo di integrazione (dt) con lo stato risultante. */
@@ -256,6 +272,11 @@ export class BeatAnalyzer {
     this.prevPlv = plv;
 
     const qav = y[S.Q_AV]!;
+    // Sistole: dal QRS alla fine dell'eiezione; diastole: dalla chiusura aortica al QRS successivo
+    if (qav > 0) this.ejected = true;
+    else if (this.ejected && pao > plv) this.ejectionOver = true;
+    if (this.ejectionOver) this.dpti += Math.max(pao - plv, 0) * dt;
+    else this.spti += plv * dt;
     const qmv = y[S.Q_MV]!;
     const qtv = y[S.Q_TV]!;
     const qpv = y[S.Q_PV]!;
@@ -341,6 +362,9 @@ export class BeatAnalyzer {
     m.svr = qs > 0 ? ((m.aoMean - svMean) / qs) * 1333.22 : 0;
     m.pvr = qp > 0 ? ((m.paMean - m.laMean) / qp) * 1333.22 : 0;
     const o = p.oxygen;
+    m.dpti = this.dpti;
+    m.spti = this.spti;
+    m.evr = this.spti > 0 ? this.dpti / this.spti : 0;
     m.svo2 = m.co > 0 ? Math.max(0, o.sao2 - o.vo2 / (m.co * 13.4 * o.hb)) : 0;
   }
 }

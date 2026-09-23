@@ -117,9 +117,15 @@ export function pericardialPressure(p: Params, heartVolume: number): number {
  * In apertura si usa l'area anterograda, in flusso retrogrado l'area rigurgitante (EROA).
  * Con EROA = 0 il flusso retrogrado è impedito (chiusura gestita anche da `clampValves`).
  */
-export function valveFlowDerivative(v: ValveParams, q: number, dp: number, zc: number): number {
+export function valveFlowDerivative(
+  v: ValveParams,
+  q: number,
+  dp: number,
+  zc: number,
+  forwardArea = v.area,
+): number {
   const forward = q > 0 || (q === 0 && dp > 0);
-  const area = forward ? v.area : v.regurgitantArea;
+  const area = forward ? forwardArea : v.regurgitantArea;
   if (area <= 1e-4) return 0;
   const l = inertance(v.length, area);
   const b = bernoulliCoefficient(area);
@@ -142,6 +148,19 @@ export interface EvalContext {
   infusion: number;
   /** Stima iniziale per il volume settale (aggiornata dopo ogni valutazione) */
   septumGuess: number;
+  /** Volume del pallone del contropulsatore aortico (mL), sposta sangue dal compartimento arterioso */
+  balloon: number;
+}
+
+/**
+ * Area efficace di efflusso del VS con ostruzione dinamica (CMI ostruttiva): il tratto di efflusso si
+ * restringe quando il volume ventricolare è piccolo (tardo-sistole, ipovolemia, inotropi, tachicardia).
+ */
+export function lvotArea(p: Params, vlv: number): number {
+  const o = p.lvot.obstruction;
+  if (o <= 0) return p.aortic.area;
+  const f = Math.min(Math.max((vlv - p.lvot.vLow) / (p.lvot.vHigh - p.lvot.vLow), 0), 1);
+  return Math.max(p.aortic.area * (1 - o * (1 - f * f * (3 - 2 * f))), 0.12);
 }
 
 /**
@@ -167,7 +186,9 @@ export function evaluate(
   const vspt = solveSeptum(p, vlv, vrv, eV, ctx.septumGuess);
   ctx.septumGuess = vspt;
 
-  const extra = ppc + pth;
+  // Il pericardio trasmette alle camere le variazioni della pressione pleurica (ridotte se costrittivo)
+  const base = p.ventilation.pleuralBaseline;
+  const extra = ppc + base + (pth - base) * p.pericardium.pleuralTransmission;
   const pla = chamberPressure(p.la, vla, eA) + extra;
   const plv = chamberPressure(p.lv, vlv - vspt, eV) + extra;
   const pra = chamberPressure(p.ra, vra, eA) + extra;
@@ -175,7 +196,7 @@ export function evaluate(
 
   const sys = p.systemic;
   const pul = p.pulmonary;
-  const psa = (y[S.V_SA]! - sys.va0) / sys.ca;
+  const psa = (y[S.V_SA]! + ctx.balloon - sys.va0) / sys.ca;
   const psv = (y[S.V_SV]! - sys.vv0) / sys.cv;
   const ppa = (y[S.V_PA]! - pul.va0) / pul.ca + pth;
   const ppvn = (y[S.V_PVN]! - pul.vv0) / pul.cv + pth;
@@ -205,7 +226,7 @@ export function evaluate(
   dy[S.V_PVN] = qpulm - qpvn;
 
   dy[S.Q_MV] = valveFlowDerivative(p.mitral, qmv, pla - plv, 0);
-  dy[S.Q_AV] = valveFlowDerivative(p.aortic, qav, plv - psa, sys.zc);
+  dy[S.Q_AV] = valveFlowDerivative(p.aortic, qav, plv - psa, sys.zc, lvotArea(p, vlv));
   dy[S.Q_TV] = valveFlowDerivative(p.tricuspid, qtv, pra - prv, 0);
   dy[S.Q_PV] = valveFlowDerivative(p.pulmonic, qpv, prv - ppa, pul.zc);
   dy[S.Q_ASD] = shuntFlowDerivative(p.asd, qasd, pla - pra);
@@ -222,7 +243,7 @@ export function evaluate(
   aux[A.P_PVN] = ppvn;
   aux[A.P_AO] = psa + sys.zc * qav;
   aux[A.P_PA_PROX] = ppa + pul.zc * qpv;
-  aux[A.P_PERI] = ppc + pth;
+  aux[A.P_PERI] = extra;
   aux[A.P_TH] = pth;
   aux[A.V_SPT] = vspt;
   aux[A.Q_SYS] = qsys;

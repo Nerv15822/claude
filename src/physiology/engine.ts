@@ -3,7 +3,8 @@
  */
 import { AUX_SIZE, A, S, STATE_SIZE, clampValves, evaluate, type EvalContext } from './model';
 import { BeatAnalyzer, RespAnalyzer, type BeatMetrics, type RespMetrics } from './metrics';
-import { applyPatch, defaultParams, type Params, type ParamsPatch } from './params';
+import { DrugState, neutralModifiers, type Modifiers } from './drugs';
+import { applyPatch, cloneParams, defaultParams, type Params, type ParamsPatch } from './params';
 import { ecgValue } from './ecg';
 import { RhythmScheduler } from './rhythm';
 import { PhonoGenerator, jetVelocity, murmurFromVelocity } from './sounds';
@@ -61,8 +62,58 @@ export interface EngineOptions {
   params?: Params;
 }
 
+/** Foglie numeriche dei parametri: [gruppo | null, chiave] (costruite una volta sola). */
+type Leaf = [string | null, string, number];
+function buildLeaves(p: Params): Leaf[] {
+  const out: Leaf[] = [];
+  for (const [g, v] of Object.entries(p)) {
+    if (typeof v === 'number') out.push([null, g, tauFor(g, '')]);
+    else if (typeof v === 'object' && v !== null)
+      for (const [k, x] of Object.entries(v as Record<string, unknown>))
+        if (typeof x === 'number') out.push([g, k, tauFor(g, k)]);
+  }
+  return out;
+}
+/**
+ * Costante di tempo (s) con cui i parametri effettivi inseguono il valore impostato: le modifiche
+ * (preset di patologia, slider) sono graduali. 0 = immediato (volemia e farmaci hanno la loro cinetica).
+ */
+function tauFor(group: string, key: string): number {
+  if (group === 'bloodVolume' || group === 'drugs' || group === 'infusionRate') return 0;
+  if (group === 'pericardium' && key === 'effusion') return 12;
+  if (group === 'rhythm' && key === 'pr') return 0;
+  return 1.5;
+}
+
+export interface ReflexState {
+  /** Moltiplicatori attuali degli effettori (1 = nessun intervento riflesso) */
+  hr: number;
+  resistance: number;
+  venous: number;
+  contractility: number;
+  /** PAM filtrata percepita dai barocettori */
+  map: number;
+}
+
+/** Intervallo di aggiornamento di parametri effettivi, farmaci e riflessi (s). */
+const MODULATION_DT = 0.01;
+
 export class CardioEngine {
+  /** Parametri effettivi usati dal modello (base + farmaci + riflessi) */
   readonly params: Params;
+  /** Parametri impostati dall'utente/preset (obiettivo) */
+  readonly target: Params;
+  /** Parametri di base: inseguono il target con transizione graduale */
+  readonly base: Params;
+  readonly drugs = new DrugState();
+  readonly mods: Modifiers = neutralModifiers({} as Modifiers);
+  readonly reflex: ReflexState = { hr: 1, resistance: 1, venous: 1, contractility: 1, map: 99.5 };
+  private readonly leaves: Leaf[];
+  private reflexX = { hr: 0, r: 0, v: 0, e: 0 };
+  private modAccum = 0;
+  private balloon = 0;
+  private balloonInflate = false;
+  private bolusRate = 0;
   readonly dt: number;
   t = 0;
   readonly y = new Float64Array(STATE_SIZE);
@@ -97,10 +148,15 @@ export class CardioEngine {
   private prevDQmv = 0;
 
   constructor(opts: EngineOptions = {}) {
-    this.params = opts.params ?? defaultParams();
+    const p0 = opts.params ?? defaultParams();
+    this.params = p0;
+    this.target = cloneParams(p0);
+    this.base = cloneParams(p0);
+    this.leaves = buildLeaves(p0);
+    this.reflex.map = p0.reflex.setpoint;
     this.dt = opts.dt ?? DEFAULT_DT;
     this.rhythm = new RhythmScheduler(opts.seed ?? 1);
-    this.ctx = { eV: 0, eA: 0, vent: this.vent, infusion: 0, septumGuess: 3 };
+    this.ctx = { eV: 0, eA: 0, vent: this.vent, infusion: 0, septumGuess: 3, balloon: 0 };
     this.initState();
   }
 
@@ -122,8 +178,100 @@ export class CardioEngine {
     this.evaluateAux();
   }
 
+  /**
+   * Imposta i parametri obiettivo. I valori numerici vengono raggiunti gradualmente (tauFor), quelli
+   * discreti (ritmo, modalità ventilatoria, flag) immediatamente.
+   */
   setParams(patch: ParamsPatch): void {
-    applyPatch(this.params, patch);
+    applyPatch(this.target, patch);
+    for (const g of Object.keys(patch) as (keyof Params)[]) {
+      const v = patch[g];
+      if (typeof v === 'object' && v !== null) {
+        for (const [k, x] of Object.entries(v)) {
+          if (typeof x !== 'number') {
+            (this.base[g] as unknown as Record<string, unknown>)[k] = x;
+            (this.params[g] as unknown as Record<string, unknown>)[k] = x;
+          }
+        }
+      }
+    }
+  }
+
+  /** Applica subito i parametri obiettivo, senza transizione (test, analisi offline, reset). */
+  settleParams(): void {
+    for (const [g, k] of this.leaves) {
+      if (g === null) (this.base as unknown as Record<string, number>)[k] = (this.target as unknown as Record<string, number>)[k]!;
+      else (this.base as unknown as Record<string, Record<string, number>>)[g]![k] = (this.target as unknown as Record<string, Record<string, number>>)[g]![k]!;
+    }
+    this.modulate(0);
+  }
+
+  /** Bolo di liquidi: `volume` mL in `seconds` s. */
+  fluidBolus(volume: number, seconds: number): void {
+    this.target.bloodVolume += volume;
+    this.base.bloodVolume = this.target.bloodVolume;
+    this.params.bloodVolume = this.target.bloodVolume;
+    this.bolusRate = Math.abs(volume) / Math.max(seconds, 1);
+  }
+
+  /** Bolo di propofol (mg/kg). */
+  bolusPropofol(mgPerKg: number): void {
+    this.drugs.bolusPropofol(mgPerKg);
+  }
+
+  /**
+   * Aggiorna base (transizione verso il target), farmacologia e baroriflesso, e calcola i parametri
+   * effettivi: effettivo = base × farmaci × riflesso sui determinanti (FC, Ees, λ, RVS, RVP, volume
+   * unstressed venoso). Senza allocazioni.
+   */
+  private modulate(dt: number): void {
+    const B = this.base as unknown as Record<string, Record<string, number> | number>;
+    const T = this.target as unknown as Record<string, Record<string, number> | number>;
+    const P = this.params as unknown as Record<string, Record<string, number> | number>;
+    for (const [g, k, tau] of this.leaves) {
+      const tgt = g === null ? (T[k] as number) : (T[g] as Record<string, number>)[k]!;
+      let b = g === null ? (B[k] as number) : (B[g] as Record<string, number>)[k]!;
+      b = tau <= 0 || dt <= 0 ? tgt : b + (tgt - b) * (1 - Math.exp(-dt / tau));
+      if (Math.abs(tgt - b) < 1e-9 * (Math.abs(tgt) + 1e-9)) b = tgt;
+      if (g === null) {
+        B[k] = b;
+        P[k] = b;
+      } else {
+        (B[g] as Record<string, number>)[k] = b;
+        (P[g] as Record<string, number>)[k] = b;
+      }
+    }
+    const base = this.base;
+    const p = this.params;
+    this.drugs.update(dt, base.drugs);
+    const m = this.drugs.modifiers(this.mods);
+
+    // Baroriflesso: PAM filtrata (τ 2 s), errore frazionale, effettori con costanti di tempo diverse
+    const rf = this.reflex;
+    const x = this.reflexX;
+    if (dt > 0) rf.map += ((this.aux[A.P_AO]! - rf.map) * dt) / 2;
+    const on = base.reflex.enabled ? 1 : 0;
+    const err = Math.max(-0.5, Math.min(0.6, (base.reflex.setpoint - rf.map) / base.reflex.setpoint)) * on;
+    const g = m.reflexGain;
+    if (dt > 0) {
+      x.hr += ((base.reflex.gainHR * g * m.reflexHR * err - x.hr) * dt) / 3;
+      x.r += ((base.reflex.gainR * g * err - x.r) * dt) / 8;
+      x.v += ((-base.reflex.gainVenous * g * err - x.v) * dt) / 20;
+      x.e += ((base.reflex.gainContractility * g * m.reflexHR * err - x.e) * dt) / 10;
+    }
+    rf.hr = Math.min(Math.max(1 + x.hr, 0.6), 2.0);
+    rf.resistance = Math.min(Math.max(1 + x.r, 0.6), 1.8);
+    rf.venous = Math.min(Math.max(1 + x.v, 0.88), 1.08);
+    rf.contractility = Math.min(Math.max(1 + x.e, 0.8), 1.35);
+
+    p.rhythm.hr = base.rhythm.hr * m.hr * rf.hr;
+    p.lv.ees = base.lv.ees * m.lvEes * rf.contractility;
+    p.rv.ees = base.rv.ees * m.rvEes * rf.contractility;
+    p.lv.lambda = base.lv.lambda * m.lambda;
+    p.rv.lambda = base.rv.lambda * m.lambda;
+    p.systemic.r = base.systemic.r * m.svr * rf.resistance;
+    p.pulmonary.r = base.pulmonary.r * m.pvr;
+    p.systemic.vv0 = base.systemic.vv0 * m.venous * rf.venous;
   }
 
   /**
@@ -133,6 +281,8 @@ export class CardioEngine {
   setBloodVolumeImmediate(volume: number): void {
     this.y[S.V_SV] = this.y[S.V_SV]! + volume - this.totalVolume();
     this.params.bloodVolume = volume;
+    this.base.bloodVolume = volume;
+    this.target.bloodVolume = volume;
   }
 
   /** Volume ematico totale attuale (mL). */
@@ -163,13 +313,26 @@ export class CardioEngine {
     const tmp = this.tmp;
     const t0 = this.t;
 
+    this.modAccum += dt;
+    if (this.modAccum >= MODULATION_DT) {
+      this.modulate(this.modAccum);
+      this.modAccum = 0;
+    }
     this.rhythm.update(t0, p.rhythm);
 
-    // Variazione graduale della volemia verso il target
+    // Variazione graduale della volemia verso il target (boli a velocità definita)
     const dv = p.bloodVolume - this.totalVolume();
-    const rate = dv / 2;
-    this.infusion = Math.abs(dv) < 1e-3 ? 0 : Math.max(-MAX_INFUSION_RATE, Math.min(MAX_INFUSION_RATE, rate));
+    const maxRate = Math.min(MAX_INFUSION_RATE, this.bolusRate > 0 ? this.bolusRate : p.infusionRate);
+    if (Math.abs(dv) < 0.5) this.bolusRate = 0;
+    this.infusion = Math.abs(dv) < 1e-3 ? 0 : Math.max(-maxRate, Math.min(maxRate, dv / 2));
     this.ctx.infusion = this.infusion;
+
+    // Contropulsatore: gonfiaggio alla chiusura aortica (diastole), sgonfiaggio al QRS successivo
+    if (p.iabp.enabled) {
+      const target = this.balloonInflate ? p.iabp.volume : 0;
+      this.balloon += ((target - this.balloon) * dt) / 0.035;
+    } else this.balloon = 0;
+    this.ctx.balloon = this.balloon;
 
     this.prepare(t0);
     evaluate(p, y, this.ctx, this.k1, this.auxTmp);
@@ -194,6 +357,7 @@ export class CardioEngine {
     this.pleth += (dt / 0.12) * (this.aux[A.P_AO]! - this.pleth);
 
     this.beat.accumulate(dt, y, this.aux);
+    if (this.rhythm.qrsFired) this.balloonInflate = false;
     if (this.rhythm.qrsFired && this.beat.onQrs(y, this.aux, p)) {
       this.beatCount++;
       this.resp.onBeat(this.beat.last);
@@ -227,7 +391,10 @@ export class CardioEngine {
     if (this.prevQtv > 0 && qtv <= 0)
       ph.burst(t + 0.015, Math.min(Math.max(dpdtRv / 600, 0), 0.6), 40, 0.016);
     // S2: chiusura delle semilunari
-    if (this.prevQav > 0 && qav <= 0) ph.burst(t, Math.min(a[A.P_AO]! / 110, 1.6), 60, 0.014);
+    if (this.prevQav > 0 && qav <= 0) {
+      ph.burst(t, Math.min(a[A.P_AO]! / 110, 1.6), 60, 0.014);
+      this.balloonInflate = true;
+    }
     if (this.prevQpv > 0 && qpv <= 0) ph.burst(t, Math.min((0.45 * a[A.P_PA_PROX]!) / 20, 1.4), 55, 0.012);
     // S3: fine del riempimento rapido (picco dell'onda E) con pressione atriale elevata
     const dq = qmv - this.prevQmv;

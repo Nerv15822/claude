@@ -65,6 +65,61 @@ export interface PericardiumParams {
   vk: number;
   /** Versamento pericardico aggiuntivo (mL) */
   effusion: number;
+  /**
+   * Frazione delle variazioni respiratorie della pressione pleurica trasmessa alle camere (1 normale).
+   * Nella pericardite costrittiva il pericardio ispessito isola il cuore (dissociazione intratoracica).
+   */
+  pleuralTransmission: number;
+}
+
+/** Ostruzione dinamica del tratto di efflusso del VS (CMI ostruttiva con SAM). */
+export interface LvotParams {
+  /** Gravità 0–1: frazione dell'area di efflusso persa a volume ventricolare minimo */
+  obstruction: number;
+  /** Volume del VS (mL) sotto il quale l'ostruzione è massima */
+  vLow: number;
+  /** Volume del VS (mL) sopra il quale il tratto di efflusso è libero */
+  vHigh: number;
+}
+
+/** Baroriflesso arterioso (seno carotideo/arco aortico) con effettori a costanti di tempo diverse. */
+export interface ReflexParams {
+  enabled: boolean;
+  /** Pressione arteriosa media di riferimento (mmHg) */
+  setpoint: number;
+  /** Guadagni: variazione frazionale dell'effettore per variazione frazionale della PAM */
+  gainHR: number;
+  gainR: number;
+  gainVenous: number;
+  gainContractility: number;
+}
+
+/**
+ * Infusioni continue (dose target). La concentrazione al sito effettore segue con cinetica del
+ * primo ordine (vedi drugs.ts).
+ */
+export interface DrugParams {
+  /** mcg/kg/min */
+  noradrenaline: number;
+  /** mcg/kg/min */
+  adrenaline: number;
+  /** mcg/kg/min */
+  dobutamine: number;
+  /** U/min */
+  vasopressin: number;
+  /** mcg/kg/min */
+  esmolol: number;
+  /** mcg/kg/min */
+  nitroglycerin: number;
+  /** mcg/kg/min */
+  milrinone: number;
+}
+
+/** Contropulsatore aortico. */
+export interface IabpParams {
+  enabled: boolean;
+  /** Volume del pallone (mL) */
+  volume: number;
 }
 
 export interface VentilationParams {
@@ -132,6 +187,12 @@ export interface Params {
   pulmonary: CirculationParams;
   ventilation: VentilationParams;
   oxygen: OxygenParams;
+  lvot: LvotParams;
+  reflex: ReflexParams;
+  drugs: DrugParams;
+  iabp: IabpParams;
+  /** Velocità massima di infusione/rimozione di volume (mL/s) */
+  infusionRate: number;
   /** Volemia totale target (mL). Le variazioni sono infuse/rimosse gradualmente dal compartimento venoso. */
   bloodVolume: number;
 }
@@ -144,7 +205,7 @@ export function defaultParams(): Params {
     la: { ees: 0.2, vd: 8, p0: 1.2, lambda: 0.048, v0: 8 },
     ra: { ees: 0.18, vd: 8, p0: 1.0, lambda: 0.045, v0: 8 },
     septum: { ees: 48, vd: 2, p0: 1.1, lambda: 0.435, v0: 2 },
-    pericardium: { p0: 0.6, v0: 440, vk: 32, effusion: 0 },
+    pericardium: { p0: 0.6, v0: 440, vk: 32, effusion: 0, pleuralTransmission: 1 },
     mitral: { area: 4.5, regurgitantArea: 0, length: 1.5, r: 0.002 },
     aortic: { area: 4.0, regurgitantArea: 0, length: 1.5, r: 0.002 },
     tricuspid: { area: 6.0, regurgitantArea: 0, length: 1.5, r: 0.002 },
@@ -168,6 +229,26 @@ export function defaultParams(): Params {
       pvrAlveolarCoef: 0.015,
     },
     oxygen: { vo2: 250, hb: 13, sao2: 0.98 },
+    lvot: { obstruction: 0, vLow: 40, vHigh: 90 },
+    reflex: {
+      enabled: true,
+      setpoint: 99.5,
+      gainHR: 2.2,
+      gainR: 1.6,
+      gainVenous: 0.35,
+      gainContractility: 0.8,
+    },
+    drugs: {
+      noradrenaline: 0,
+      adrenaline: 0,
+      dobutamine: 0,
+      vasopressin: 0,
+      esmolol: 0,
+      nitroglycerin: 0,
+      milrinone: 0,
+    },
+    iabp: { enabled: false, volume: 40 },
+    infusionRate: 25,
     bloodVolume: 5000,
   };
 }
