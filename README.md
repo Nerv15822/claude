@@ -28,7 +28,7 @@ a schermo intero e, dopo la prima apertura, funziona anche offline (service work
 - [x] Fase 4 — cuore 3D procedurale
 - [x] Fase 5 — valvole, particelle, sezioni
 - [x] Fase 6 — patologie, interventi, schede didattiche
-- [ ] Fase 7 — rifinitura grafica, performance, PWA
+- [x] Fase 7 — confronto con il cuore normale, performance, PWA
 
 ## Motore fisiologico (`src/physiology`)
 
