@@ -7,6 +7,7 @@ import { PVLoop } from './charts/PVLoop';
 import { StarlingCurve } from './charts/StarlingCurve';
 import { WiggersDiagram } from './charts/WiggersDiagram';
 import { ControlPanel } from './controls/ControlPanel';
+import { ViewPanel } from './controls/ViewPanel';
 import { Segmented } from './controls/Slider';
 import { BottomSheet, type SheetLevel } from './layout/BottomSheet';
 import { HemodynamicTable } from './monitor/HemodynamicTable';
@@ -15,9 +16,10 @@ import { MonitorView } from './monitor/MonitorView';
 // La scena 3D (three.js) è caricata in modo differito: il bundle iniziale resta leggero.
 const HeartScene = lazy(() => import('@scene/HeartScene').then((m) => ({ default: m.HeartScene })));
 
-type Tab = 'monitor' | 'wiggers' | 'pv' | 'starling' | 'dati' | 'controlli';
+type Tab = 'monitor' | 'vista' | 'wiggers' | 'pv' | 'starling' | 'dati' | 'controlli';
 const TABS: readonly (readonly [Tab, string])[] = [
   ['monitor', 'Monitor'],
+  ['vista', 'Vista 3D'],
   ['controlli', 'Controlli'],
   ['wiggers', 'Wiggers'],
   ['pv', 'Loop PV'],
@@ -85,6 +87,8 @@ function SheetContent({ tab, height }: { tab: Tab; height: number }) {
       return <HemodynamicTable />;
     case 'controlli':
       return <ControlPanel />;
+    case 'vista':
+      return <ViewPanel />;
   }
 }
 

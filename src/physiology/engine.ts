@@ -46,6 +46,10 @@ export const SAMPLE_FIELDS = [
   'ecg',
   'phono',
   'pleth',
+  'qVR',
+  'qPVin',
+  'qSYS',
+  'qPULM',
 ] as const;
 export type SampleField = (typeof SAMPLE_FIELDS)[number];
 export const SAMPLE_SIZE = SAMPLE_FIELDS.length;
@@ -311,6 +315,10 @@ export class CardioEngine {
     });
     out[offset + F.phono] = this.phono.value(this.t);
     out[offset + F.pleth] = this.pleth;
+    out[offset + F.qVR] = a[A.Q_VR]!;
+    out[offset + F.qPVin] = a[A.Q_PVN]!;
+    out[offset + F.qSYS] = a[A.Q_SYS]!;
+    out[offset + F.qPULM] = a[A.Q_PULM]!;
   }
 
   get lastBeat(): BeatMetrics {

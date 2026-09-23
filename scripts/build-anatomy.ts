@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { surfaceNets } from '../src/scene/heart/surfaceNets';
 import { mergeMeshes, readObj, signedVolume, type TriMesh } from './anatomy/obj';
-import { Grid, blur, shellSdf, solidSdf } from './anatomy/voxel';
+import { Grid, blur, lumenSdf, orientOutward, removeJunctionCaps, shellSdf, solidSdf } from './anatomy/voxel';
 
 const dir = process.argv[2];
 if (!dir) throw new Error('Specificare la cartella degli OBJ BodyParts3D');
@@ -30,10 +30,28 @@ const RV_CAVITY = load('FJ2423');
 const LA_WALL = load('FJ2438');
 const RA_WALL = load('FJ2439');
 const MITRAL = load('FJ2420', 'FJ2432');
-const AORTA = load('FJ3413', 'FJ3411', 'FJ1931', 'FJ3417', 'FJ3479', 'FJ3483');
-const PULM_ART = load('FJ2966', 'FJ2924', 'FJ3019');
+const AORTA_IDS = ['FJ3413', 'FJ3411', 'FJ1931', 'FJ3417', 'FJ3479', 'FJ3483'];
+const PULM_ART_IDS = ['FJ2966', 'FJ2924', 'FJ3019'];
 const CAVAE = load('FJ3645', 'FJ3441');
-const PULM_VEINS = load('FJ2925', 'FJ2933', 'FJ2944', 'FJ2950', 'FJ2955', 'FJ3020', 'FJ3040');
+const PULM_VEIN_IDS = ['FJ2925', 'FJ2933', 'FJ2944', 'FJ2950', 'FJ2955', 'FJ3020', 'FJ3040'];
+const LA_CAVITY = load('FJ2425');
+const RA_CAVITY = load('FJ2424');
+const PAPILLARY_LV = load('FJ2418', 'FJ2429');
+const PAPILLARY_RV = load('FJ2419', 'FJ2430', 'FJ2437');
+/** Lembi valvolari reali: [valvola, file] — 0 mitrale, 1 aortica, 2 tricuspide, 3 polmonare */
+const LEAFLETS: [number, string][] = [
+  [0, 'FJ2420'],
+  [0, 'FJ2432'],
+  [1, 'FJ2426'],
+  [1, 'FJ2431'],
+  [1, 'FJ2435'],
+  [2, 'FJ2421'],
+  [2, 'FJ2433'],
+  [2, 'FJ2436'],
+  [3, 'FJ2417'],
+  [3, 'FJ2427'],
+  [3, 'FJ2434'],
+];
 const CORONARY_ART = load(
   'FJ2737',
   'FJ2631',
@@ -137,16 +155,32 @@ const CLIP = { min: [-42, -182, 1165] as const, max: [80, -46, 1336] as const };
 const g = new Grid([-46, -186, 1146], [142, 144, 198], 1);
 log(`griglia ${g.nx}×${g.ny}×${g.nz}`);
 
-const lvCav = solidSdf(g, LV_CAVITY, 14, 2.5, orient(LV_CAVITY));
-const rvCav = solidSdf(g, RV_CAVITY, 8, 2.5, orient(RV_CAVITY));
+// Vasi: rimozione dei tappi alle giunzioni tra segmenti (lume continuo)
+const vessel = (ids: string[]) =>
+  mergeMeshes(removeJunctionCaps(g, ids.map((id) => orientOutward(load(id)))));
+const AORTA = vessel(AORTA_IDS);
+const PULM_ART = vessel(PULM_ART_IDS);
+const PULM_VEINS = vessel(PULM_VEIN_IDS);
+log('giunzioni vascolari aperte');
+const lvCav = solidSdf(g, LV_CAVITY, 22, 4, orient(LV_CAVITY));
+const rvCav = solidSdf(g, RV_CAVITY, 22, 4, orient(RV_CAVITY));
 log('cavità ventricolari');
+// Gli osti venosi (12–15 mm) richiedono una chiusura morfologica ampia per sigillare le cavità atriali
+const laCav = solidSdf(g, LA_CAVITY, 22, 8, orient(LA_CAVITY));
+const raCav = solidSdf(g, RA_CAVITY, 22, 9, orient(RA_CAVITY));
 const la = solidSdf(g, LA_WALL, 6, 3, orient(LA_WALL));
 const ra = solidSdf(g, RA_WALL, 6, 3, orient(RA_WALL));
 log('atri');
-const ao = shellSdf(g, AORTA, 1.1, 6);
-const pa = shellSdf(g, PULM_ART, 1.0, 6);
-const cav = shellSdf(g, CAVAE, 0.9, 6);
-const pv = shellSdf(g, PULM_VEINS, 0.8, 6);
+// Banda ampia: la distanza dalla parete al centro del lume serve come raggio dei percorsi del flusso
+const ao = shellSdf(g, AORTA, 1.1, 18);
+const pa = shellSdf(g, PULM_ART, 1.0, 16);
+const cav = shellSdf(g, CAVAE, 0.9, 14);
+const pv = shellSdf(g, PULM_VEINS, 0.8, 10);
+// Campi con segno del lume (negativi dentro) per le linee centrali e i raggi dei percorsi del flusso
+const aoLumen = lumenSdf(g, AORTA, 18);
+const paLumen = lumenSdf(g, PULM_ART, 16);
+const cavLumen = lumenSdf(g, orientOutward(CAVAE), 14);
+const pvLumen = lumenSdf(g, PULM_VEINS, 10);
 log('vasi');
 
 // Asse del VS: centro dell'anulus mitralico → apice (punto della cavità più lontano)
@@ -286,6 +320,26 @@ const coronary = simplify(toF32(CORONARY_ART).positions, CORONARY_ART.indices, 0
 const veins = simplify(toF32(CARDIAC_VEINS).positions, CARDIAC_VEINS.indices, 0.35, 0.02);
 log(`coronarie ${coronary.positions.length / 3} v, vene ${veins.positions.length / 3} v`);
 
+// Superfici endocardiche chiuse (per le sezioni e la vista a raggi X)
+const cavitySurface = (f: Float32Array, ratio: number) => {
+  const sm = blur(g, f, 1);
+  const n = surfaceNets((x, y, z) => g.sample(sm, x, y, z), {
+    min: [g.origin[0], g.origin[1], g.origin[2]],
+    max: [g.origin[0] + g.size[0], g.origin[1] + g.size[1], g.origin[2] + g.size[2]],
+    cell: 1,
+  });
+  return { ...largestComponents(simplify(n.positions, n.indices, ratio, 0.006), 0.05), field: sm };
+};
+const cavities = [lvCav, rvCav, laCav, raCav].map((f) => cavitySurface(f, 0.12));
+log(`cavità: ${cavities.map((c) => c.positions.length / 3).join(', ')} vertici`);
+const papLV = simplify(toF32(PAPILLARY_LV).positions, PAPILLARY_LV.indices, 0.4, 0.01);
+const papRV = simplify(toF32(PAPILLARY_RV).positions, PAPILLARY_RV.indices, 0.4, 0.01);
+const leafletMeshes = LEAFLETS.map(([, id]) => {
+  const m = load(id);
+  return simplify(toF32(m).positions, m.indices, 0.3, 0.004);
+});
+log(`lembi valvolari: ${leafletMeshes.map((l) => l.positions.length / 3).join(', ')} vertici`);
+
 // Posizione delle coronarie rispetto all'epicardio ricostruito (controllo di coerenza)
 {
   const ds: number[] = [];
@@ -314,6 +368,9 @@ const COLORS = {
   vein: srgb(0x6a3b52),
   pvein: srgb(0x8a4a50),
   coronary: srgb(0xb02a22),
+  endo: srgb(0xa3362f),
+  papillary: srgb(0x8c2722),
+  valve: srgb(0xe6d2b5),
   cvein: srgb(0x4a2440),
 };
 
@@ -345,15 +402,160 @@ function distToCoronary(x: number, y: number, z: number): number {
   return best;
 }
 
+// ---------------------------------------------------------------- cerniere dei lembi valvolari
+const sub3 = (a: number[], b: number[]) => [a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!];
+const dot3 = (a: number[], b: number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+const cross3 = (a: number[], b: number[]) => [
+  a[1]! * b[2]! - a[2]! * b[1]!,
+  a[2]! * b[0]! - a[0]! * b[2]!,
+  a[0]! * b[1]! - a[1]! * b[0]!,
+];
+const norm3 = (a: number[]) => {
+  const l = Math.hypot(a[0]!, a[1]!, a[2]!) || 1;
+  return [a[0]! / l, a[1]! / l, a[2]! / l];
+};
+const meshCentroid = (pos: Float32Array | Float64Array) => {
+  const c = [0, 0, 0];
+  const n = pos.length / 3;
+  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) c[k] = c[k]! + pos[i * 3 + k]! / n;
+  return c;
+};
+const topCentroid = (m: TriMesh, axisK: number, sign: 1 | -1, frac = 0.12) => {
+  const n = m.positions.length / 3;
+  const vals = Array.from({ length: n }, (_, i) => sign * m.positions[i * 3 + axisK]!).sort((a, b) => b - a);
+  const thr = vals[Math.floor(n * frac)]!;
+  const sel: number[] = [];
+  for (let i = 0; i < n; i++)
+    if (sign * m.positions[i * 3 + axisK]! >= thr)
+      sel.push(m.positions[i * 3]!, m.positions[i * 3 + 1]!, m.positions[i * 3 + 2]!);
+  return meshCentroid(new Float64Array(sel));
+};
+const laC = meshCentroid(LA_CAVITY.positions);
+const raC = meshCentroid(RA_CAVITY.positions);
+let rvApexMm = [0, 0, 0];
+{
+  let best = -Infinity;
+  for (let i = 0; i < RV_CAVITY.positions.length; i += 3) {
+    const p = [RV_CAVITY.positions[i]!, RV_CAVITY.positions[i + 1]!, RV_CAVITY.positions[i + 2]!];
+    const sc = dot3(sub3(p, mitralCenter), axis);
+    if (sc > best) {
+      best = sc;
+      rvApexMm = p;
+    }
+  }
+}
+const valveCenters = [0, 1, 2, 3].map((v) =>
+  meshCentroid(mergeMeshes(LEAFLETS.filter(([vv]) => vv === v).map(([, id]) => load(id))).positions),
+);
+const ascTop = topCentroid(load('FJ3413'), 2, 1);
+const ptTop = topCentroid(load('FJ2966'), 2, 1);
+/** Direzione del flusso anterogrado attraverso ciascuna valvola */
+const valveAxes = [
+  norm3(sub3(apex, laC)),
+  norm3(sub3(ascTop, valveCenters[1]!)),
+  norm3(sub3(rvApexMm, raC)),
+  norm3(sub3(ptTop, valveCenters[3]!)),
+];
+interface Hinge {
+  valve: number;
+  point: number[];
+  axis: number[];
+  length: number;
+  /** Elevazione del lembo rispetto al piano dell'anulus nella posa del modello (rad, + verso valle) */
+  restElevation: number;
+}
+const hinges: Hinge[] = LEAFLETS.map(([v], i) => {
+  const m = leafletMeshes[i]!;
+  const C = valveCenters[v]!;
+  const nAx = valveAxes[v]!;
+  const n = m.positions.length / 3;
+  const radial: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const q = sub3([m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!], C);
+    const a = dot3(q, nAx);
+    radial.push(Math.hypot(q[0]! - a * nAx[0]!, q[1]! - a * nAx[1]!, q[2]! - a * nAx[2]!));
+  }
+  const rmax = Math.max(...radial);
+  const atrioventricular = v === 0 || v === 2;
+  const axial: number[] = [];
+  for (let k = 0; k < n; k++)
+    axial.push(dot3(sub3([m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!], C), nAx));
+  const amin = Math.min(...axial);
+  const base: number[] = [];
+  for (let k = 0; k < n; k++) {
+    // AV: l'anulus è la parte più a monte (i lembi includono le corde tendinee verso i papillari);
+    // semilunari: l'inserzione sulla parete è la parte più periferica
+    const onHinge = atrioventricular ? axial[k]! < amin + 4 : radial[k]! > 0.8 * rmax;
+    if (onHinge) base.push(m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!);
+  }
+  const H = meshCentroid(new Float64Array(base));
+  const hc = sub3(H, C);
+  const d = norm3(
+    sub3(
+      hc,
+      nAx.map((x) => x * dot3(hc, nAx)),
+    ),
+  );
+  let ax = norm3(cross3(nAx, d));
+  // Verso di rotazione: aprire = portare il margine libero a valle (+n) e verso la parete (+d)
+  const tip = sub3(meshCentroid(m.positions), H);
+  if (dot3(cross3(ax, tip), nAx) < 0) ax = ax.map((x) => -x);
+  let len = 0;
+  for (let k = 0; k < n; k++) {
+    const q = sub3([m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!], H);
+    const along = dot3(q, ax);
+    len = Math.max(len, Math.hypot(q[0]! - along * ax[0]!, q[1]! - along * ax[1]!, q[2]! - along * ax[2]!));
+  }
+  // Elevazione della posa: direzione cerniera → margine libero rispetto al piano dell'anulus
+  const tipPts: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const q = sub3([m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!], H);
+    const along = dot3(q, ax);
+    const r = Math.hypot(q[0]! - along * ax[0]!, q[1]! - along * ax[1]!, q[2]! - along * ax[2]!);
+    const inFreeEdge = atrioventricular ? r > 0.35 * len && r < 0.6 * len : r > 0.7 * len;
+    if (inFreeEdge) tipPts.push(m.positions[k * 3]!, m.positions[k * 3 + 1]!, m.positions[k * 3 + 2]!);
+  }
+  const tipDir = norm3(sub3(meshCentroid(new Float64Array(tipPts)), H));
+  const restElevation = Math.asin(Math.max(-1, Math.min(1, dot3(tipDir, nAx))));
+  return { valve: v, point: H, axis: ax, length: len, restElevation };
+});
+/** Distanza normalizzata dalla linea di cerniera (0 = anulus, 1 = margine libero). */
+function leafT(leaf: number, x: number, y: number, z: number): number {
+  const h = hinges[leaf]!;
+  const q = sub3([x, y, z], h.point);
+  const along = dot3(q, h.axis);
+  const r = Math.hypot(q[0]! - along * h.axis[0]!, q[1]! - along * h.axis[1]!, q[2]! - along * h.axis[2]!);
+  const d = Math.min(r / h.length, 1);
+  // AV: massima rotazione al margine libero, nulla all'anulus e all'apice delle corde (ancorate ai papillari)
+  return h.valve === 0 || h.valve === 2 ? Math.sin(Math.PI * Math.min(d / 0.95, 1)) : d;
+}
+
 interface Part {
   positions: Float32Array;
   indices: Uint32Array;
-  kind: 'heart' | 'coronary' | 'vein';
+  kind: 'heart' | 'coronary' | 'vein' | 'cavity' | 'papillary' | 'valve';
+  /** Gruppo di rendering */
+  group: 'exterior' | 'cavities' | 'papillary' | 'valves';
+  /** Codice di superficie (aSurface.y) */
+  code?: number;
+  /** Campo per le normali (superfici da SDF) */
+  field?: Float32Array;
+  leaf?: number;
 }
 const parts: Part[] = [
-  { ...heart, kind: 'heart' },
-  { ...coronary, kind: 'coronary' },
-  { ...veins, kind: 'vein' },
+  { ...heart, kind: 'heart', group: 'exterior', field },
+  { ...coronary, kind: 'coronary', group: 'exterior' },
+  { ...veins, kind: 'vein', group: 'exterior' },
+  ...cavities.map((c, i): Part => ({ ...c, kind: 'cavity', group: 'cavities', code: 5 + i })),
+  { ...papLV, kind: 'papillary', group: 'papillary', code: 9 },
+  { ...papRV, kind: 'papillary', group: 'papillary', code: 9 },
+  ...leafletMeshes.map((l, i): Part => ({
+    ...l,
+    kind: 'valve',
+    group: 'valves',
+    code: 10 + LEAFLETS[i]![0],
+    leaf: i,
+  })),
 ];
 const total = parts.reduce((a, p) => a + p.positions.length / 3, 0);
 const out = {
@@ -364,8 +566,10 @@ const out = {
   aVessel: new Float32Array(total * 4),
   aAxis: new Float32Array(total * 3),
   aSurface: new Float32Array(total * 2),
+  aLeaf: new Float32Array(total * 2),
 };
 const indexList: number[] = [];
+const groups: Record<string, { start: number; count: number }> = {};
 
 // Conversione BP3D (mm) → scena (cm): X = x, Y = z, Z = −y, ricentrata
 const CENTER_MM = [25, -118, 1235];
@@ -390,7 +594,7 @@ for (const part of parts) {
   const n = part.positions.length / 3;
   // Normali per vertice dalla mesh (vasi coronarici) o dal campo (cuore)
   const vn = new Float32Array(n * 3);
-  if (part.kind !== 'heart') {
+  if (!part.field) {
     for (let t = 0; t < part.indices.length; t += 3) {
       const a = part.indices[t]!,
         b = part.indices[t + 1]!,
@@ -428,7 +632,7 @@ for (const part of parts) {
     }
     for (let gi = 0; gi < GROUPS; gi++) w[gi] = w[gi]! / sum;
     let nrm: number[];
-    if (part.kind === 'heart') nrm = grad(field, x, y, z);
+    if (part.field) nrm = grad(part.field, x, y, z);
     else {
       const l = Math.hypot(vn[i * 3]!, vn[i * 3 + 1]!, vn[i * 3 + 2]!) || 1;
       nrm = [vn[i * 3]! / l, vn[i * 3 + 1]! / l, vn[i * 3 + 2]! / l];
@@ -456,6 +660,15 @@ for (const part of parts) {
     if (part.kind === 'coronary') {
       col = COLORS.coronary;
       kind = 3;
+    } else if (part.kind === 'cavity') {
+      col = COLORS.endo;
+      kind = part.code!;
+    } else if (part.kind === 'papillary') {
+      col = COLORS.papillary;
+      kind = 9;
+    } else if (part.kind === 'valve') {
+      col = COLORS.valve;
+      kind = part.code!;
     } else if (part.kind === 'vein') {
       col = COLORS.cvein;
       kind = 4;
@@ -489,8 +702,11 @@ for (const part of parts) {
     out.aVessel.set([w[4]!, w[5]!, w[6]!, w[7]!], o * 4);
     out.aAxis.set(toScene(axisP[0]!, axisP[1]!, axisP[2]!), o * 3);
     out.aSurface.set([fat, kind], o * 2);
+    if (part.leaf !== undefined) out.aLeaf.set([part.leaf + 1, leafT(part.leaf, x, y, z)], o * 2);
   }
+  const grp = (groups[part.group] ??= { start: indexList.length, count: 0 });
   for (let t = 0; t < part.indices.length; t++) indexList.push(part.indices[t]! + vOff);
+  grp.count = indexList.length - grp.start;
   vOff += n;
 }
 log(`attributi: ${total} vertici, ${indexList.length / 3} triangoli`);
@@ -575,6 +791,7 @@ const buffers: [string, ArrayBufferView][] = [
   ['aVessel', u8(out.aVessel, (v) => Math.round(v * 255))],
   ['aAxis', q16(out.aAxis)],
   ['aSurface', u8(out.aSurface, (v, i) => (i % 2 === 0 ? Math.round(v * 255) : v))],
+  ['aLeaf', u8(out.aLeaf, (v, i) => (i % 2 === 0 ? v : Math.round(v * 255)))],
   ['index', wide ? new Uint32Array(indexList) : new Uint16Array(indexList)],
 ];
 const layout: { name: string; offset: number; bytes: number }[] = [];
@@ -588,8 +805,350 @@ const bin = new Uint8Array(Math.ceil(size / 4) * 4);
 buffers.forEach(([, b], i) =>
   bin.set(new Uint8Array(b.buffer, b.byteOffset, b.byteLength), layout[i]!.offset),
 );
-Object.assign(meta, { bboxMin: bmin, bboxMax: bmax, wideIndex: wide, layout });
+Object.assign(meta, {
+  bboxMin: bmin,
+  bboxMax: bmax,
+  wideIndex: wide,
+  layout,
+  groups,
+  valveCenters: valveCenters.map((c) => toScene(c[0]!, c[1]!, c[2]!)),
+  valveAxes: valveAxes.map((a) => [a[0]!, a[2]!, -a[1]!]),
+  leaflets: hinges.map((h) => ({
+    valve: h.valve,
+    point: toScene(h.point[0]!, h.point[1]!, h.point[2]!),
+    axis: [h.axis[0]!, h.axis[2]!, -h.axis[1]!],
+    restElevation: Number(h.restElevation.toFixed(4)),
+  })),
+  paths: buildPaths(),
+});
 writeFileSync('public/models/heart-bp3d.bin', bin);
 writeFileSync('public/models/heart-bp3d.json', JSON.stringify(meta, null, 2));
 log(`scritto public/models/heart-bp3d.bin (${(size / 1024 / 1024).toFixed(2)} MB)`);
 console.log(meta.refVolume);
+
+// ---------------------------------------------------------------- percorsi del flusso (particelle)
+/**
+ * Rete di percorsi lungo i lumi (cave → AD → VD → AP; vene polmonari → AS → VS → aorta e rami).
+ * Ogni punto porta: posizione e raggio del lume (cm), i due flussi del motore da interpolare
+ * (indici: 0 qVR, 1 qPVin, 2 qTV, 3 qMV, 4 qPV, 5 qAV, 6 qPULM, 7 qSYS), la frazione di interpolazione,
+ * la quota di flusso del ramo e i pesi di regione per la deformazione.
+ */
+function buildPaths() {
+  const slice = (m: TriMesh, k: number, lo: number, hi: number) => {
+    const sel: number[] = [];
+    for (let i = 0; i < m.positions.length; i += 3) {
+      const v = m.positions[i + k]!;
+      if (v >= lo && v <= hi) sel.push(m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!);
+    }
+    return meshCentroid(new Float64Array(sel));
+  };
+  const farEnd = (m: TriMesh, from: number[]) => {
+    let dmax = 0;
+    for (let i = 0; i < m.positions.length; i += 3)
+      dmax = Math.max(
+        dmax,
+        Math.hypot(
+          m.positions[i]! - from[0]!,
+          m.positions[i + 1]! - from[1]!,
+          m.positions[i + 2]! - from[2]!,
+        ),
+      );
+    const sel: number[] = [];
+    for (let i = 0; i < m.positions.length; i += 3)
+      if (
+        Math.hypot(
+          m.positions[i]! - from[0]!,
+          m.positions[i + 1]! - from[1]!,
+          m.positions[i + 2]! - from[2]!,
+        ) >
+        0.85 * dmax
+      )
+        sel.push(m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!);
+    return meshCentroid(new Float64Array(sel));
+  };
+  const lerp = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i]! - v) * t);
+  const add = (a: number[], b: number[], s: number) => a.map((v, i) => v + b[i]! * s);
+
+  // ---- linee centrali dei vasi
+  /**
+   * Traccia la linea centrale di un vaso seguendo la cresta del campo di distanza dalla parete
+   * (massimo locale nel piano ortogonale alla direzione di avanzamento), passo 3 mm.
+   */
+  const trackField = (f: Float32Array, from: number[], dir: number[], length: number, stopBelowZ = -Infinity) => {
+    // Distanza dalla parete verso l'interno del lume (negativa fuori)
+    const inside = (q: number[]) => -g.sample(f, q[0]!, q[1]!, q[2]!);
+    const recenter = (q: number[], a: number[]) => {
+      const u = norm3(cross3(a, Math.abs(a[2]!) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+      const v = cross3(a, u);
+      let c = q;
+      for (let it = 0; it < 30; it++) {
+        let best = c;
+        let bestV = inside(c);
+        for (let k = 0; k < 8; k++) {
+          const ang = (k / 8) * Math.PI * 2;
+          const cand = [0, 1, 2].map((i) => c[i]! + (u[i]! * Math.cos(ang) + v[i]! * Math.sin(ang)) * 0.8);
+          const val = inside(cand);
+          if (val > bestV + 1e-3) {
+            bestV = val;
+            best = cand;
+          }
+        }
+        if (best === c) break;
+        c = best;
+      }
+      return c;
+    };
+    let a = norm3(dir);
+    let p = recenter(from, a);
+    const out: number[][] = [p];
+    for (let k = 0; k * 3 < length; k++) {
+      // Direzione: nel cono di ±60° attorno a quella corrente, quella che resta più al centro del lume
+      const u = norm3(cross3(a, Math.abs(a[2]!) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+      const v = cross3(a, u);
+      let bestDir = a;
+      let bestVal = inside([p[0]! + a[0]! * 4, p[1]! + a[1]! * 4, p[2]! + a[2]! * 4]);
+      for (const tilt of [0.35, 0.7, 1.05]) {
+        for (let m = 0; m < 12; m++) {
+          const ang = (m / 12) * Math.PI * 2;
+          const d = norm3([0, 1, 2].map((i) => a[i]! * Math.cos(tilt) + (u[i]! * Math.cos(ang) + v[i]! * Math.sin(ang)) * Math.sin(tilt)));
+          const val = inside([p[0]! + d[0]! * 4, p[1]! + d[1]! * 4, p[2]! + d[2]! * 4]) - tilt * 0.8;
+          if (val > bestVal) {
+            bestVal = val;
+            bestDir = d;
+          }
+        }
+      }
+      a = bestDir;
+      const next = recenter([p[0]! + a[0]! * 3, p[1]! + a[1]! * 3, p[2]! + a[2]! * 3], a);
+      const step = sub3(next, p);
+      if (Math.hypot(step[0]!, step[1]!, step[2]!) < 0.5 || inside(next) < 0.5) break;
+      a = norm3([0.5 * a[0]! + 0.5 * norm3(step)[0]!, 0.5 * a[1]! + 0.5 * norm3(step)[1]!, 0.5 * a[2]! + 0.5 * norm3(step)[2]!]);
+      p = next;
+      out.push(p);
+      if (p[2]! < stopBelowZ) break;
+      if (k > 3 && (p[0]! < CLIP.min[0] + 3 || p[0]! > CLIP.max[0] - 3 || p[2]! < CLIP.min[2] + 3 || p[2]! > CLIP.max[2] - 3))
+        break;
+    }
+    return out;
+  };
+  const decimate = (pts: number[][], every: number) => pts.filter((_, i) => i % every === 0 || i === pts.length - 1);
+  const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+  const closestTo = (pts: number[][], q: number[]) => pts.reduce((best, p) => (dist(p, q) < dist(best, q) ? p : best));
+  const sliceTop = (m: TriMesh) => {
+    const sel: number[] = [];
+    for (let i = 0; i < m.positions.length; i += 3)
+      if (m.positions[i + 2]! > CLIP.max[2] - 10 && m.positions[i + 2]! < CLIP.max[2] - 4 && m.positions[i]! < CLIP.max[0] - 2)
+        sel.push(m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!);
+    return meshCentroid(new Float64Array(sel));
+  };
+
+  const tvC = valveCenters[2]!;
+  const rvApexIn = lerp(rvApexMm, tvC, 0.18);
+  const rvMid = lerp(tvC, rvApexIn, 0.55);
+  const pvC = valveCenters[3]!;
+  const rvot = add(pvC, valveAxes[3]!, -12);
+  const mvC = valveCenters[0]!;
+  const lvApexIn = lerp(apex, mitralCenter, 0.18);
+  const lvMid = lerp(mvC, lvApexIn, 0.55);
+  const avC = valveCenters[1]!;
+  const lvot = add(avC, valveAxes[1]!, -12);
+
+  // Cave: dall'estremità sezionata verso l'atrio destro
+  const SVC_M = load('FJ3645');
+  const IVC_M = load('FJ3441');
+  const ivcBase = slice(IVC_M, 2, CLIP.min[2] + 1, CLIP.min[2] + 8);
+  const svcLine = trackField(cavLumen, slice(SVC_M, 2, CLIP.max[2] - 40, CLIP.max[2] - 34), [0, 0, -1], 40);
+  const ivcLine = trackField(cavLumen, ivcBase, [0, 0, 1], 30);
+  // Aorta: dalla valvola lungo ascendente, arco e discendente
+  const AO_M = load('FJ3413', 'FJ3411', 'FJ1931');
+  // Partenza nel tratto tubulare dell'ascendente (la radice bulbosa rende ambiguo l'asse locale)
+  const ascStart = slice(load('FJ3413'), 2, 1258, 1264);
+  const aoTracked = [avC, ...trackField(aoLumen, ascStart, [0, 0, 1], 420, CLIP.min[2] + 6)];
+  // Discendente (quasi verticale): baricentri di sezioni orizzontali della mesh reale
+  const DESC_M = load('FJ1931');
+  const ringRadius = new Map<number[], number>();
+  const descLine: number[][] = [];
+  for (let z = 1292; z >= CLIP.min[2] + 6; z -= 4) {
+    const c = slice(DESC_M, 2, z - 1.5, z + 1.5);
+    // Raggio della sezione: distanza media dei vertici dell'anello dal baricentro
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < DESC_M.positions.length; i += 3)
+      if (Math.abs(DESC_M.positions[i + 2]! - z) < 1.5) {
+        sum += Math.hypot(DESC_M.positions[i]! - c[0]!, DESC_M.positions[i + 1]! - c[1]!);
+        n++;
+      }
+    ringRadius.set(c, n ? sum / n : 0);
+    descLine.push(c);
+  }
+  // Ascendente + arco fino al punto più vicino all'inizio della discendente, poi la discendente
+  let cut = aoTracked.length - 1;
+  let bestD = Infinity;
+  for (let i = 0; i < aoTracked.length; i++) {
+    const d = dist(aoTracked[i]!, descLine[0]!);
+    if (d < bestD) {
+      bestD = d;
+      cut = i;
+    } else if (bestD < 20 && d > bestD + 10) break;
+  }
+  const aoLine = [...aoTracked.slice(0, cut + 1), ...descLine];
+  void AO_M;
+  const branch = (id: string) => {
+    const m = load(id);
+    return trackField(aoLumen, sliceTop(m), [0, 0, -1], 40).reverse();
+  };
+  const bcLine = branch('FJ3417');
+  const lccaLine = branch('FJ3483');
+  const lsaLine = branch('FJ3479');
+  // Arteria polmonare: tronco dalla valvola, poi rami destro e sinistro
+  const PT_M = load('FJ2966', 'FJ2924', 'FJ3019');
+  const ptLine = trackField(paLumen, add(pvC, valveAxes[3]!, 6), valveAxes[3]!, 36);
+  // Rami: tracciati sulla mesh del singolo ramo, dall'estremità sezionata verso la biforcazione
+  const LPA_M = load('FJ2924');
+  const RPA_M = load('FJ3019');
+  const lpaLine = trackField(paLumen, slice(LPA_M, 0, CLIP.max[0] - 12, CLIP.max[0] - 5), [-1, 0, 0], 110).reverse();
+  const rpaLine = trackField(paLumen, slice(RPA_M, 0, CLIP.min[0] + 5, CLIP.min[0] + 12), [1, 0, 0], 110).reverse();
+  void PT_M;
+  // Vene polmonari: dall'estremità polmonare verso l'atrio sinistro
+  const pvLines = [['FJ2925', 'FJ2933'], ['FJ2944', 'FJ2950', 'FJ2955'], ['FJ3020'], ['FJ3040']].map((ids) => {
+    const m = load(...ids);
+    const far = farEnd(m, laC);
+    return trackField(pvLumen, far, sub3(laC, far), 80);
+  });
+  if (process.env.DEBUG_PATHS) {
+    for (const q of aoLine) console.log('  ao', q.map((x) => x.toFixed(1)).join(','), 'in', (-g.sample(aoLumen, q[0]!, q[1]!, q[2]!)).toFixed(2));
+    for (let dz = -20; dz <= 20; dz += 4) {
+      const q = [ascStart[0]!, ascStart[1]!, ascStart[2]! + dz];
+      const row = [];
+      for (let dx = -20; dx <= 20; dx += 4) row.push(g.sample(ao, q[0]! + dx, q[1]!, q[2]!).toFixed(0).padStart(3));
+      console.log('  z' + String(dz).padStart(3), row.join(''));
+    }
+  }
+  log(
+    `linee centrali: aorta ${aoLine.length}, AP ${ptLine.length}/${lpaLine.length}/${rpaLine.length}, ` +
+      `cave ${svcLine.length}/${ivcLine.length}, vene polmonari ${pvLines.map((l) => l.length).join('/')}, ` +
+      `rami ${bcLine.length}/${lccaLine.length}/${lsaLine.length}`,
+  );
+  const archTop = aoLine.reduce((a, b) => (b[2]! > a[2]! ? b : a));
+
+  /** `fields`: campi con segno (negativi dentro) dei lumi attraversati dallo stadio */
+  type Stage = { pts: number[][]; q0: number; q1: number; frac: number; fields: Float32Array[] };
+  const right = (inlet: number[][], frac: number, branchLine: number[][]): Stage[] => [
+    { pts: decimate(inlet, 3), q0: 0, q1: 0, frac, fields: [cavLumen, raCav] },
+    { pts: [inlet[inlet.length - 1]!, raC, tvC], q0: 0, q1: 2, frac: 1, fields: [raCav, rvCav, cavLumen] },
+    { pts: [tvC, rvMid, rvApexIn, rvot, pvC], q0: 2, q1: 4, frac: 1, fields: [rvCav, raCav, paLumen] },
+    { pts: [pvC, ...decimate(ptLine, 3)], q0: 4, q1: 6, frac: 1, fields: [paLumen, rvCav] },
+    { pts: decimate(branchLine, 3), q0: 6, q1: 6, frac: 0.5, fields: [paLumen, rvCav] },
+  ];
+  const left = (vein: number[][], tail: Stage[]): Stage[] => [
+    { pts: decimate(vein, 3), q0: 1, q1: 1, frac: 0.25, fields: [pvLumen, laCav] },
+    { pts: [vein[vein.length - 1]!, laC, mvC], q0: 1, q1: 3, frac: 1, fields: [laCav, lvCav, pvLumen] },
+    { pts: [mvC, lvMid, lvApexIn, lvot, avC], q0: 3, q1: 5, frac: 1, fields: [lvCav, laCav, aoLumen] },
+    ...tail,
+  ];
+  const archIdx = aoLine.indexOf(archTop);
+  const toDesc: Stage[] = [
+    { pts: [avC, ...decimate(aoLine.slice(0, archIdx + 1), 3)], q0: 5, q1: 7, frac: 1, fields: [aoLumen, lvCav] },
+    { pts: decimate(aoLine.slice(archIdx), 3), q0: 7, q1: 7, frac: 0.72, fields: [aoLumen, lvCav] },
+  ];
+  const toBranch = (line: number[][], frac: number): Stage[] => {
+    const origin = closestTo(aoLine, line[0]!);
+    const trunk = aoLine.slice(0, aoLine.indexOf(origin) + 1);
+    return [
+      { pts: [avC, ...decimate(trunk, 3)], q0: 5, q1: 7, frac: 1, fields: [aoLumen, lvCav] },
+      { pts: [origin, ...decimate(line, 2)], q0: 7, q1: 7, frac, fields: [aoLumen, lvCav] },
+    ];
+  };
+  const defs: { side: number; stages: Stage[] }[] = [
+    { side: 0, stages: right(svcLine, 0.35, lpaLine) },
+    { side: 0, stages: right(svcLine, 0.35, rpaLine) },
+    { side: 0, stages: right(ivcLine, 0.65, lpaLine) },
+    { side: 0, stages: right(ivcLine, 0.65, rpaLine) },
+    ...pvLines.map((l) => ({ side: 1, stages: left(l, toDesc) })),
+    { side: 1, stages: left(pvLines[2]!, toBranch(bcLine, 0.12)) },
+    { side: 1, stages: left(pvLines[0]!, toBranch(lccaLine, 0.08)) },
+    { side: 1, stages: left(pvLines[1]!, toBranch(lsaLine, 0.08)) },
+  ];
+
+  /** Raggio misurato dalle sezioni ad anello (discendente) se il punto è vicino a una di esse. */
+  const nearestRing = (p: number[]) => {
+    let r = -Infinity;
+    for (const [c, rr] of ringRadius) if (dist(c, p) < 8) r = Math.max(r, rr * 0.9);
+    return r;
+  };
+  // Catmull-Rom attraverso i punti di uno stadio, campionata ogni ~2 mm
+  const catmull = (P: number[][], step: number) => {
+    const out: number[][] = [];
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[Math.max(i - 1, 0)]!;
+      const p1 = P[i]!;
+      const p2 = P[i + 1]!;
+      const p3 = P[Math.min(i + 2, P.length - 1)]!;
+      const L = Math.hypot(p2[0]! - p1[0]!, p2[1]! - p1[1]!, p2[2]! - p1[2]!);
+      const n = Math.max(2, Math.ceil(L / step));
+      for (let k = 0; k < n; k++) {
+        const t = k / n;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        out.push(
+          [0, 1, 2].map(
+            (c) =>
+              0.5 *
+              (2 * p1[c]! +
+                (-p0[c]! + p2[c]!) * t +
+                (2 * p0[c]! - 5 * p1[c]! + 4 * p2[c]! - p3[c]!) * t2 +
+                (-p0[c]! + 3 * p1[c]! - 3 * p2[c]! + p3[c]!) * t3),
+          ),
+        );
+      }
+    }
+    out.push(P[P.length - 1]!);
+    return out;
+  };
+
+  const wts = new Float64Array(GROUPS);
+  return defs.map(({ side, stages }) => {
+    const data: number[] = [];
+    let volume = 0;
+    let prev: number[] | null = null;
+    for (const st of stages) {
+      const pts = catmull(st.pts, 2);
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0 && prev) continue; // evita duplicati tra stadi
+        const p = pts[i]!;
+        const f = pts.length > 1 ? i / (pts.length - 1) : 0;
+        let inside = -Infinity;
+        for (const f of st.fields) inside = Math.max(inside, -g.sample(f, p[0]!, p[1]!, p[2]!));
+        inside = Math.max(inside, nearestRing(p));
+        const r = Math.min(
+          Math.max(inside, 1.5),
+          25,
+        );
+        let min = Infinity;
+        for (let gi = 0; gi < GROUPS; gi++) {
+          wts[gi] = g.sample(fields[gi]!, p[0]!, p[1]!, p[2]!);
+          min = Math.min(min, wts[gi]!);
+        }
+        let sum = 0;
+        for (let gi = 0; gi < GROUPS; gi++) {
+          wts[gi] = Math.exp(-(wts[gi]! - min) / TAU);
+          sum += wts[gi]!;
+        }
+        const sp = toScene(p[0]!, p[1]!, p[2]!);
+        data.push(sp[0], sp[1], sp[2], (r * 0.85) / 10, st.q0, st.q1, f, st.frac);
+        for (let gi = 0; gi < GROUPS; gi++) data.push(Number((wts[gi]! / sum).toFixed(4)));
+        if (prev) {
+          const ds = Math.hypot(p[0]! - prev[0]!, p[1]! - prev[1]!, p[2]! - prev[2]!) / 10;
+          volume += Math.PI * Math.pow((r * 0.85) / 10, 2) * ds * st.frac;
+        }
+        prev = p;
+      }
+    }
+    return {
+      side,
+      stride: 16,
+      volume: Number(volume.toFixed(2)),
+      data: data.map((v) => Number(v.toFixed(4))),
+    };
+  });
+}

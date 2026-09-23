@@ -283,3 +283,83 @@ export function blur(g: Grid, f: Float32Array, passes = 1): Float32Array {
   }
   return src;
 }
+
+/**
+ * Rimuove i "tappi" alle giunzioni tra segmenti di uno stesso vaso (BodyParts3D chiude ogni segmento):
+ * si eliminano i triangoli di ciascun segmento che giacciono sulla superficie di un segmento adiacente.
+ */
+export function removeJunctionCaps(g: Grid, parts: TriMesh[], tol = 0.9): TriMesh[] {
+  const bands = parts.map((m) => unsignedBand(g, m, 2).dist);
+  return parts.map((m, pi) => {
+    const keep: number[] = [];
+    const p = m.positions;
+    for (let t = 0; t < m.indices.length; t += 3) {
+      let onOther = true;
+      for (let q = 0; q < 3 && onOther; q++) {
+        const v = m.indices[t + q]! * 3;
+        let d = Infinity;
+        for (let oj = 0; oj < parts.length; oj++) {
+          if (oj === pi) continue;
+          d = Math.min(d, g.sample(bands[oj]!, p[v]!, p[v + 1]!, p[v + 2]!));
+        }
+        if (d > tol) onOther = false;
+      }
+      if (!onOther) keep.push(m.indices[t]!, m.indices[t + 1]!, m.indices[t + 2]!);
+    }
+    return { positions: m.positions, indices: new Uint32Array(keep) };
+  });
+}
+
+/** Riorienta i triangoli in modo che le normali puntino verso l'esterno (volume con segno positivo). */
+export function orientOutward(m: TriMesh): TriMesh {
+  let v = 0;
+  const p = m.positions;
+  for (let t = 0; t < m.indices.length; t += 3) {
+    const a = m.indices[t]! * 3;
+    const b = m.indices[t + 1]! * 3;
+    const c = m.indices[t + 2]! * 3;
+    v +=
+      p[a]! * (p[b + 1]! * p[c + 2]! - p[b + 2]! * p[c + 1]!) -
+      p[a + 1]! * (p[b]! * p[c + 2]! - p[b + 2]! * p[c]!) +
+      p[a + 2]! * (p[b]! * p[c + 1]! - p[b + 1]! * p[c]!);
+  }
+  if (v >= 0) return m;
+  const idx = new Uint32Array(m.indices.length);
+  for (let t = 0; t < idx.length; t += 3) {
+    idx[t] = m.indices[t]!;
+    idx[t + 1] = m.indices[t + 2]!;
+    idx[t + 2] = m.indices[t + 1]!;
+  }
+  return { positions: m.positions, indices: idx };
+}
+
+/**
+ * Distanza con segno di un lume vascolare anche aperto: il segno è dato dalla normale (uscente) del
+ * triangolo più vicino, quindi funziona con estremità aperte. Negativa dentro il lume.
+ */
+export function lumenSdf(g: Grid, m: TriMesh, band: number): Float32Array {
+  const { dist, tri } = unsignedBand(g, m, band);
+  const p = m.positions;
+  const sd = new Float32Array(g.count);
+  for (let k = 0; k < g.nz; k++)
+    for (let j = 0; j < g.ny; j++)
+      for (let i = 0; i < g.nx; i++) {
+        const id = g.idx(i, j, k);
+        const t = tri[id]!;
+        if (t < 0) {
+          sd[id] = band;
+          continue;
+        }
+        const a = m.indices[t * 3]! * 3;
+        const b = m.indices[t * 3 + 1]! * 3;
+        const c = m.indices[t * 3 + 2]! * 3;
+        const ux = p[b]! - p[a]!, uy = p[b + 1]! - p[a + 1]!, uz = p[b + 2]! - p[a + 2]!;
+        const vx = p[c]! - p[a]!, vy = p[c + 1]! - p[a + 1]!, vz = p[c + 2]! - p[a + 2]!;
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const x = g.origin[0] + i * g.h - (p[a]! + p[b]! + p[c]!) / 3;
+        const y = g.origin[1] + j * g.h - (p[a + 1]! + p[b + 1]! + p[c + 1]!) / 3;
+        const z = g.origin[2] + k * g.h - (p[a + 2]! + p[b + 2]! + p[c + 2]!) / 3;
+        sd[id] = (x * nx + y * ny + z * nz >= 0 ? 1 : -1) * dist[id]!;
+      }
+  return sd;
+}

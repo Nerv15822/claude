@@ -23,7 +23,7 @@ Il deploy su GitHub Pages è automatico a ogni push su `main`
 - [x] Fase 2 — motore fisiologico + validazione
 - [x] Fase 3 — tracciati, Wiggers, loop PV
 - [x] Fase 4 — cuore 3D procedurale
-- [ ] Fase 5 — valvole, particelle, sezioni
+- [x] Fase 5 — valvole, particelle, sezioni
 - [ ] Fase 6 — patologie, interventi, schede didattiche
 - [ ] Fase 7 — rifinitura grafica, performance, PWA
 
@@ -119,6 +119,38 @@ Il cuore procedurale basato su SDF (`scene/heart/anatomy.ts`) resta come fallbac
 - **Interfaccia:** cuore a pieno schermo, viste predefinite, OrbitControls touch, bottom sheet a tre
   livelli (pannello laterale in orizzontale).
 
+### Strutture interne, valvole, flusso e sezioni (Fase 5)
+
+- **Strutture interne reali (BodyParts3D):** superfici endocardiche chiuse delle 4 cavità, muscoli
+  papillari e **11 lembi valvolari reali**. I lembi sono 2 della mitrale e 3 ciascuno per tricuspide,
+  aortica e polmonare.
+- **Lembi animati:** per ogni lembo la pipeline calcola la linea di cerniera sull'anulus e la distanza di
+  ogni vertice dalla cerniera; nel vertex shader il lembo ruota attorno a quella linea. L'apertura segue
+  il **flusso transvalvolare del motore** (inerzia di circa 20–30 ms).
+  - Stenosi: apertura massima ∝ √(area/area normale).
+  - Insufficienza: coaptazione incompleta ∝ √EROA.
+- **Particelle di flusso** (5 000 / 12 000 / 24 000 secondo la qualità) lungo 11 percorsi anatomici:
+  cave → AD → VD → tronco → rami polmonari; 4 vene polmonari → AS → VS → aorta, discendente e tronchi
+  sovraortici.
+  - I percorsi seguono la **linea centrale reale dei lumi**: cresta del campo di distanza con segno dalla
+    parete, calcolata dopo aver rimosso i "tappi" tra i segmenti vascolari di BodyParts3D.
+  - La **velocità** di ogni particella è `v = Q/A`: Q è il flusso del motore, interpolato tra l'ingresso e
+    l'uscita di ciascun tratto e ripartito tra i rami; A è l'area locale del lume.
+  - Integrazione sul tempo simulato, quindi rispettano pausa e rallenty. Le particelle seguono anche la
+    deformazione del cuore.
+  - Due colorazioni: **saturazione** (SaO₂ / SvO₂ calcolata) oppure **color-Doppler** (verso/lontano
+    dall'osservatore, aliasing oltre 70 cm/s, mosaico nei flussi turbolenti). Oltre 1.5 m/s le particelle
+    disperdono (getti).
+- **Modalità di vista:**
+  - esterna;
+  - **sezione**: 4 camere, asse lungo parasternale o asse corto, con piano spostabile; il taglio del
+    miocardio è chiuso con lo stencil buffer;
+  - **raggi X**: epicardio ed endocardio trasparenti con effetto Fresnel;
+  - **heatmap di pressione** sull'endocardio (0–140 mmHg);
+  - **attivazione** elettromeccanica sincrona con l'ECG.
+- **Etichette anatomiche:** con un doppio tap su una struttura compare il nome della regione (camera,
+  vaso, valvola, papillare, coronaria o grasso epicardico).
+
 ### Usare un modello anatomico GLB
 
 Se esiste `public/models/heart.glb`, viene caricato al posto del cuore procedurale e normalizzato a circa
@@ -183,6 +215,13 @@ Da leggere prima di usare il simulatore per la didattica.
   ventricolare è invece **ricostruito** per offset delle cavità con spessori di parete tipici (VS 10 mm,
   VD 4 mm), non misurato. Il grasso epicardico è distribuito in modo euristico (vicino ai vasi, solco AV,
   radice dei vasi). La mesh è decimata a circa 38 000 vertici per iPhone.
+- **Particelle di flusso:** mostrano la velocità media nel lume (Q/A) lungo percorsi prestabiliti.
+  Non è una simulazione CFD: vortici, profili di velocità e ricircoli non sono calcolati, e i getti
+  sono solo una dispersione proporzionale alla velocità. Nelle camere il percorso è schematico
+  (afflusso → apice → efflusso).
+- **Valvole:** i lembi ruotano rigidamente attorno alla cerniera (con curvatura proporzionale alla distanza
+  dall'anulus), senza modello strutturale né corde tendinee. La posa di riposo del modello BodyParts3D è
+  stimata.
 - **Dettaglio di superficie:** fibre, vasellini e lobuli del grasso sono procedurali (rumore), non
   fotografati; la direzione delle fibre è un'elica a −60° semplificata.
 - **Deformazione 3D:** è cinematica, non meccanica, e non viene da un modello a elementi finiti. Le frazioni

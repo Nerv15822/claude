@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ACESFilmicToneMapping, NoToneMapping, Vector3 } from 'three';
 import { Effects } from './Effects';
+import { AnatomyLabel } from './AnatomyLabel';
 import { DETAIL } from './heart/heartMaterial';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { LONG_AXIS } from './heart/anatomy';
@@ -28,6 +29,10 @@ function presetDirection(v: ViewPreset): Vector3 {
       return new Vector3(...LONG_AXIS).normalize();
     case 'base':
       return new Vector3(-0.15, 1, 0.3).normalize();
+    case 'sezione': {
+      const sv = useView.getState().sectionView;
+      return sv ? new Vector3(...sv.dir).normalize() : new Vector3(0, 0.08, 1).normalize();
+    }
   }
 }
 
@@ -46,15 +51,22 @@ function framing(aspect: number, fovDeg: number): { distance: number; yShift: nu
 function CameraRig({ controls }: { controls: React.RefObject<OrbitControlsImpl | null> }) {
   const preset = useView((s) => s.preset);
   const nonce = useView((s) => s.nonce);
+  const sectionView = useView((s) => s.sectionView);
   const { camera, size } = useThree();
   const goal = useRef<Vector3 | null>(null);
   const goalTarget = useRef(new Vector3());
   useEffect(() => {
     const { distance, yShift } = framing(size.width / size.height, 35);
     const shift = new Vector3(0, yShift, 0);
-    goalTarget.current.copy(CENTER).add(shift);
-    goal.current = CENTER.clone().add(presetDirection(preset).multiplyScalar(distance)).add(shift);
-  }, [preset, nonce, size.width, size.height]);
+    const sv = useView.getState().sectionView;
+    const center = preset === 'sezione' && sv ? new Vector3(...sv.center) : CENTER;
+    const k = preset === 'sezione' ? 0.8 : 1;
+    goalTarget.current.copy(center).add(shift);
+    goal.current = center
+      .clone()
+      .add(presetDirection(preset).multiplyScalar(distance * k))
+      .add(shift);
+  }, [preset, nonce, size.width, size.height, sectionView]);
   useFrame((_, dt) => {
     if (!goal.current) return;
     const k = 1 - Math.exp(-dt * 6);
@@ -104,10 +116,15 @@ export function HeartScene() {
         gl={{
           antialias: quality === 'bassa',
           powerPreference: 'high-performance',
+          stencil: true,
           toneMapping: quality === 'bassa' ? ACESFilmicToneMapping : NoToneMapping,
         }}
         key={quality === 'bassa' ? 'lq' : 'hq'}
         style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
+        onCreated={({ gl }) => {
+          gl.localClippingEnabled = true;
+        }}
+        onPointerMissed={() => useView.getState().setLabel(null)}
       >
         <PerformanceMonitor
           onIncline={() => setDpr((d) => Math.min(d + 0.25, Math.min(window.devicePixelRatio, 2)))}
@@ -174,6 +191,7 @@ export function HeartScene() {
           makeDefault
         />
         <CameraRig controls={controls} />
+        <AnatomyLabel />
       </Canvas>
       {!ready && !glb && (
         <div

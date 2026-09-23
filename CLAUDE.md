@@ -65,3 +65,15 @@ Questi range sono verificati da `tests/physiology/normal.test.ts`.
   aggiornate in `HeartMesh` via `deformation.ts` leggendo l'ultimo campione del buffer: nessuna logica
   fisiologica nella scena.
 - La scena è caricata in lazy (`React.lazy`): il bundle iniziale non contiene three.js.
+
+## Fase 5 — note operative
+
+- Asset anatomico: `scripts/build-anatomy.ts` (≈ 2 min) → `public/models/heart-bp3d.{json,bin}` con gruppi
+  `exterior | cavities | papillary | valves`, lembi (`leaflets`: cerniera, asse, elevazione di riposo) e
+  percorsi del flusso (`paths`, 16 valori per punto). Richiede gli OBJ BodyParts3D (non versionati).
+- GLSL condiviso in `scene/heart/deformGlsl.ts` (`csDeform`, `csLeaflet`): usarlo per ogni nuova mesh o
+  effetto che debba seguire il battito.
+- Valvole: `valveDynamics.ts` (apertura da flusso, stenosi, EROA). Particelle: `FlowParticles.tsx`
+  (v = Q/A sul tempo simulato). Sezioni: `sectionPlanes.ts` + capping a stencil in `AnatomicalHeart.tsx`
+  (Canvas con `stencil: true` e `EffectComposer stencilBuffer`).
+- ESLint: `react-hooks/immutability` disattivata solo in `src/scene` (oggetti three.js mutati per design).

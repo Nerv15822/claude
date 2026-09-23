@@ -17,6 +17,20 @@ export interface AnatomyMeta extends HeartFrame {
   bboxMax: [number, number, number];
   wideIndex: boolean;
   layout: { name: string; offset: number; bytes: number }[];
+  groups: Record<string, { start: number; count: number }>;
+  mitralCenter: number[];
+  valveCenters: number[][];
+  valveAxes: number[][];
+  leaflets: { valve: number; point: number[]; axis: number[]; restElevation: number }[];
+  paths: FlowPath[];
+}
+
+/** Percorso del flusso: punti di 16 valori (x, y, z, r, q0, q1, f, quota, 8 pesi di regione). */
+export interface FlowPath {
+  side: number;
+  stride: number;
+  volume: number;
+  data: number[];
 }
 
 export interface AnatomyAsset {
@@ -67,6 +81,13 @@ export async function loadAnatomy(): Promise<AnatomyAsset> {
     surface[i * 2 + 1] = surf[i * 2 + 1]!;
   }
   g.setAttribute('aSurface', new BufferAttribute(surface, 2));
+  const leafSrc = u8('aLeaf', 2);
+  const leaf = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    leaf[i * 2] = leafSrc[i * 2]!;
+    leaf[i * 2 + 1] = leafSrc[i * 2 + 1]! / 255;
+  }
+  g.setAttribute('aLeaf', new BufferAttribute(leaf, 2));
   const ip = part('index');
   g.setIndex(
     new BufferAttribute(

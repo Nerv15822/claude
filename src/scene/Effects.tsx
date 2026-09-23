@@ -12,7 +12,7 @@ export function Effects({ quality }: { quality: Quality }) {
   if (quality === 'bassa') return null;
   const high = quality === 'alta';
   return (
-    <EffectComposer multisampling={0} enableNormalPass={false}>
+    <EffectComposer multisampling={0} enableNormalPass={false} stencilBuffer>
       <N8AO
         aoRadius={1.6}
         distanceFalloff={0.6}
