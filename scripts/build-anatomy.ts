@@ -157,7 +157,12 @@ log(`griglia ${g.nx}×${g.ny}×${g.nz}`);
 
 // Vasi: rimozione dei tappi alle giunzioni tra segmenti (lume continuo)
 const vessel = (ids: string[]) =>
-  mergeMeshes(removeJunctionCaps(g, ids.map((id) => orientOutward(load(id)))));
+  mergeMeshes(
+    removeJunctionCaps(
+      g,
+      ids.map((id) => orientOutward(load(id))),
+    ),
+  );
 const AORTA = vessel(AORTA_IDS);
 const PULM_ART = vessel(PULM_ART_IDS);
 const PULM_VEINS = vessel(PULM_VEIN_IDS);
@@ -874,7 +879,13 @@ function buildPaths() {
    * Traccia la linea centrale di un vaso seguendo la cresta del campo di distanza dalla parete
    * (massimo locale nel piano ortogonale alla direzione di avanzamento), passo 3 mm.
    */
-  const trackField = (f: Float32Array, from: number[], dir: number[], length: number, stopBelowZ = -Infinity) => {
+  const trackField = (
+    f: Float32Array,
+    from: number[],
+    dir: number[],
+    length: number,
+    stopBelowZ = -Infinity,
+  ) => {
     // Distanza dalla parete verso l'interno del lume (negativa fuori)
     const inside = (q: number[]) => -g.sample(f, q[0]!, q[1]!, q[2]!);
     const recenter = (q: number[], a: number[]) => {
@@ -910,7 +921,12 @@ function buildPaths() {
       for (const tilt of [0.35, 0.7, 1.05]) {
         for (let m = 0; m < 12; m++) {
           const ang = (m / 12) * Math.PI * 2;
-          const d = norm3([0, 1, 2].map((i) => a[i]! * Math.cos(tilt) + (u[i]! * Math.cos(ang) + v[i]! * Math.sin(ang)) * Math.sin(tilt)));
+          const d = norm3(
+            [0, 1, 2].map(
+              (i) =>
+                a[i]! * Math.cos(tilt) + (u[i]! * Math.cos(ang) + v[i]! * Math.sin(ang)) * Math.sin(tilt),
+            ),
+          );
           const val = inside([p[0]! + d[0]! * 4, p[1]! + d[1]! * 4, p[2]! + d[2]! * 4]) - tilt * 0.8;
           if (val > bestVal) {
             bestVal = val;
@@ -922,22 +938,38 @@ function buildPaths() {
       const next = recenter([p[0]! + a[0]! * 3, p[1]! + a[1]! * 3, p[2]! + a[2]! * 3], a);
       const step = sub3(next, p);
       if (Math.hypot(step[0]!, step[1]!, step[2]!) < 0.5 || inside(next) < 0.5) break;
-      a = norm3([0.5 * a[0]! + 0.5 * norm3(step)[0]!, 0.5 * a[1]! + 0.5 * norm3(step)[1]!, 0.5 * a[2]! + 0.5 * norm3(step)[2]!]);
+      a = norm3([
+        0.5 * a[0]! + 0.5 * norm3(step)[0]!,
+        0.5 * a[1]! + 0.5 * norm3(step)[1]!,
+        0.5 * a[2]! + 0.5 * norm3(step)[2]!,
+      ]);
       p = next;
       out.push(p);
       if (p[2]! < stopBelowZ) break;
-      if (k > 3 && (p[0]! < CLIP.min[0] + 3 || p[0]! > CLIP.max[0] - 3 || p[2]! < CLIP.min[2] + 3 || p[2]! > CLIP.max[2] - 3))
+      if (
+        k > 3 &&
+        (p[0]! < CLIP.min[0] + 3 ||
+          p[0]! > CLIP.max[0] - 3 ||
+          p[2]! < CLIP.min[2] + 3 ||
+          p[2]! > CLIP.max[2] - 3)
+      )
         break;
     }
     return out;
   };
-  const decimate = (pts: number[][], every: number) => pts.filter((_, i) => i % every === 0 || i === pts.length - 1);
+  const decimate = (pts: number[][], every: number) =>
+    pts.filter((_, i) => i % every === 0 || i === pts.length - 1);
   const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
-  const closestTo = (pts: number[][], q: number[]) => pts.reduce((best, p) => (dist(p, q) < dist(best, q) ? p : best));
+  const closestTo = (pts: number[][], q: number[]) =>
+    pts.reduce((best, p) => (dist(p, q) < dist(best, q) ? p : best));
   const sliceTop = (m: TriMesh) => {
     const sel: number[] = [];
     for (let i = 0; i < m.positions.length; i += 3)
-      if (m.positions[i + 2]! > CLIP.max[2] - 10 && m.positions[i + 2]! < CLIP.max[2] - 4 && m.positions[i]! < CLIP.max[0] - 2)
+      if (
+        m.positions[i + 2]! > CLIP.max[2] - 10 &&
+        m.positions[i + 2]! < CLIP.max[2] - 4 &&
+        m.positions[i]! < CLIP.max[0] - 2
+      )
         sel.push(m.positions[i]!, m.positions[i + 1]!, m.positions[i + 2]!);
     return meshCentroid(new Float64Array(sel));
   };
@@ -1006,21 +1038,45 @@ function buildPaths() {
   // Rami: tracciati sulla mesh del singolo ramo, dall'estremità sezionata verso la biforcazione
   const LPA_M = load('FJ2924');
   const RPA_M = load('FJ3019');
-  const lpaLine = trackField(paLumen, slice(LPA_M, 0, CLIP.max[0] - 12, CLIP.max[0] - 5), [-1, 0, 0], 110).reverse();
-  const rpaLine = trackField(paLumen, slice(RPA_M, 0, CLIP.min[0] + 5, CLIP.min[0] + 12), [1, 0, 0], 110).reverse();
+  const lpaLine = trackField(
+    paLumen,
+    slice(LPA_M, 0, CLIP.max[0] - 12, CLIP.max[0] - 5),
+    [-1, 0, 0],
+    110,
+  ).reverse();
+  const rpaLine = trackField(
+    paLumen,
+    slice(RPA_M, 0, CLIP.min[0] + 5, CLIP.min[0] + 12),
+    [1, 0, 0],
+    110,
+  ).reverse();
   void PT_M;
   // Vene polmonari: dall'estremità polmonare verso l'atrio sinistro
-  const pvLines = [['FJ2925', 'FJ2933'], ['FJ2944', 'FJ2950', 'FJ2955'], ['FJ3020'], ['FJ3040']].map((ids) => {
-    const m = load(...ids);
-    const far = farEnd(m, laC);
-    return trackField(pvLumen, far, sub3(laC, far), 80);
-  });
+  const pvLines = [['FJ2925', 'FJ2933'], ['FJ2944', 'FJ2950', 'FJ2955'], ['FJ3020'], ['FJ3040']].map(
+    (ids) => {
+      const m = load(...ids);
+      const far = farEnd(m, laC);
+      return trackField(pvLumen, far, sub3(laC, far), 80);
+    },
+  );
   if (process.env.DEBUG_PATHS) {
-    for (const q of aoLine) console.log('  ao', q.map((x) => x.toFixed(1)).join(','), 'in', (-g.sample(aoLumen, q[0]!, q[1]!, q[2]!)).toFixed(2));
+    for (const q of aoLine)
+      console.log(
+        '  ao',
+        q.map((x) => x.toFixed(1)).join(','),
+        'in',
+        (-g.sample(aoLumen, q[0]!, q[1]!, q[2]!)).toFixed(2),
+      );
     for (let dz = -20; dz <= 20; dz += 4) {
       const q = [ascStart[0]!, ascStart[1]!, ascStart[2]! + dz];
       const row = [];
-      for (let dx = -20; dx <= 20; dx += 4) row.push(g.sample(ao, q[0]! + dx, q[1]!, q[2]!).toFixed(0).padStart(3));
+      for (let dx = -20; dx <= 20; dx += 4)
+        row.push(
+          g
+            .sample(ao, q[0]! + dx, q[1]!, q[2]!)
+            .toFixed(0)
+            .padStart(3),
+        );
       console.log('  z' + String(dz).padStart(3), row.join(''));
     }
   }
@@ -1048,7 +1104,13 @@ function buildPaths() {
   ];
   const archIdx = aoLine.indexOf(archTop);
   const toDesc: Stage[] = [
-    { pts: [avC, ...decimate(aoLine.slice(0, archIdx + 1), 3)], q0: 5, q1: 7, frac: 1, fields: [aoLumen, lvCav] },
+    {
+      pts: [avC, ...decimate(aoLine.slice(0, archIdx + 1), 3)],
+      q0: 5,
+      q1: 7,
+      frac: 1,
+      fields: [aoLumen, lvCav],
+    },
     { pts: decimate(aoLine.slice(archIdx), 3), q0: 7, q1: 7, frac: 0.72, fields: [aoLumen, lvCav] },
   ];
   const toBranch = (line: number[][], frac: number): Stage[] => {
@@ -1120,10 +1182,7 @@ function buildPaths() {
         let inside = -Infinity;
         for (const f of st.fields) inside = Math.max(inside, -g.sample(f, p[0]!, p[1]!, p[2]!));
         inside = Math.max(inside, nearestRing(p));
-        const r = Math.min(
-          Math.max(inside, 1.5),
-          25,
-        );
+        const r = Math.min(Math.max(inside, 1.5), 25);
         let min = Infinity;
         for (let gi = 0; gi < GROUPS; gi++) {
           wts[gi] = g.sample(fields[gi]!, p[0]!, p[1]!, p[2]!);

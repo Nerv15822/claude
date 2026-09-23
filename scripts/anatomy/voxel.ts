@@ -353,9 +353,15 @@ export function lumenSdf(g: Grid, m: TriMesh, band: number): Float32Array {
         const a = m.indices[t * 3]! * 3;
         const b = m.indices[t * 3 + 1]! * 3;
         const c = m.indices[t * 3 + 2]! * 3;
-        const ux = p[b]! - p[a]!, uy = p[b + 1]! - p[a + 1]!, uz = p[b + 2]! - p[a + 2]!;
-        const vx = p[c]! - p[a]!, vy = p[c + 1]! - p[a + 1]!, vz = p[c + 2]! - p[a + 2]!;
-        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const ux = p[b]! - p[a]!,
+          uy = p[b + 1]! - p[a + 1]!,
+          uz = p[b + 2]! - p[a + 2]!;
+        const vx = p[c]! - p[a]!,
+          vy = p[c + 1]! - p[a + 1]!,
+          vz = p[c + 2]! - p[a + 2]!;
+        const nx = uy * vz - uz * vy,
+          ny = uz * vx - ux * vz,
+          nz = ux * vy - uy * vx;
         const x = g.origin[0] + i * g.h - (p[a]! + p[b]! + p[c]!) / 3;
         const y = g.origin[1] + j * g.h - (p[a + 1]! + p[b + 1]! + p[c + 1]!) / 3;
         const z = g.origin[2] + k * g.h - (p[a + 2]! + p[b + 2]! + p[c + 2]!) / 3;
