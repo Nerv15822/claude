@@ -75,6 +75,10 @@ export interface BeatMetrics {
   dpti: number;
   spti: number;
   evr: number;
+  /** Volume medio di spostamento del setto (mL, > 0 verso il VD; < 0 = setto spinto verso il VS) */
+  sptMean: number;
+  /** Spostamento settale telediastolico (mL) */
+  sptEd: number;
 }
 
 export interface RespMetrics {
@@ -138,6 +142,8 @@ export function emptyBeatMetrics(): BeatMetrics {
     dpti: 0,
     spti: 0,
     evr: 0,
+    sptMean: 0,
+    sptEd: 0,
   };
 }
 
@@ -196,6 +202,8 @@ export class BeatAnalyzer {
   private asd = 0;
   private vsd = 0;
   private pda = 0;
+  private sptInt = 0;
+  private sptEd = 0;
   private dpti = 0;
   private spti = 0;
   private ejected = false;
@@ -211,6 +219,7 @@ export class BeatAnalyzer {
     this.reset();
     this.lvEdp = aux[A.P_LV]!;
     this.rvEdp = aux[A.P_RV]!;
+    this.sptEd = aux[A.V_SPT]!;
     this.prevVlv = y[S.V_LV]!;
     this.prevPlv = aux[A.P_LV]!;
     this.started = true;
@@ -230,7 +239,7 @@ export class BeatAnalyzer {
     this.mvGradInt = this.mvGradTime = this.tvGradInt = this.tvGradTime = 0;
     this.pvGradInt = this.pvGradTime = this.pvGradPeak = 0;
     this.asd = this.vsd = this.pda = 0;
-    this.dpti = this.spti = 0;
+    this.dpti = this.spti = this.sptInt = 0;
     this.ejected = this.ejectionOver = false;
   }
 
@@ -263,6 +272,7 @@ export class BeatAnalyzer {
     this.laInt += pla * dt;
     this.raInt += pra * dt;
     this.periInt += aux[A.P_PERI]! * dt;
+    this.sptInt += aux[A.V_SPT]! * dt;
     this.svInt += aux[A.P_SV]! * dt;
     this.qsysInt += aux[A.Q_SYS]! * dt;
     this.qpulmInt += aux[A.Q_PULM]! * dt;
@@ -362,6 +372,8 @@ export class BeatAnalyzer {
     m.svr = qs > 0 ? ((m.aoMean - svMean) / qs) * 1333.22 : 0;
     m.pvr = qp > 0 ? ((m.paMean - m.laMean) / qp) * 1333.22 : 0;
     const o = p.oxygen;
+    m.sptMean = this.sptInt / T;
+    m.sptEd = this.sptEd;
     m.dpti = this.dpti;
     m.spti = this.spti;
     m.evr = this.spti > 0 ? this.dpti / this.spti : 0;
