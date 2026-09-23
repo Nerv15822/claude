@@ -77,3 +77,18 @@ Questi range sono verificati da `tests/physiology/normal.test.ts`.
   (v = Q/A sul tempo simulato). Sezioni: `sectionPlanes.ts` + capping a stencil in `AnatomicalHeart.tsx`
   (Canvas con `stencil: true` e `EffectComposer stencilBuffer`).
 - ESLint: `react-hooks/immutability` disattivata solo in `src/scene` (oggetti three.js mutati per design).
+
+## Fase 6 — note operative
+
+- Parametri a tre livelli in `CardioEngine`: `target` (setParams) → `base` (transizione, `tauFor`) → `params`
+  (effettivi = base × `drugs.modifiers()` × baroriflesso). `settleParams()` salta la transizione (test).
+  I test meccanici usano `steady()` con il riflesso disattivato; i preset sono verificati con il riflesso attivo.
+- Nuovo campo di campione `balloon` (volume IABP). Stato per la UI (`EngineStatus`: concentrazioni
+  all'effettore, riflesso, volume pendente) inviato dal worker a ogni battito.
+- Patologie: `src/pathologies/*.ts`, ognuna con `params(s)` (valori assoluti rispetto al normale), `morfologia(s)`,
+  `gravita(s)` e `scheda`. `caseParams()` costruisce il caso; nello store `loadCase()` riavvia il motore,
+  `setSeverity()` applica la patch in modo graduale. Ogni nuovo preset va aggiunto a `EXPECT` in
+  `tests/pathologies/presets.test.ts`.
+- Avvisi didattici: `src/pathologies/alerts.ts` (regole pure su metriche e parametri).
+- Scena: `#define CS_CAVITY` (via `injectDeformation(..., cavity)`) per endocardio, papillari, stencil delle cavità
+  e particelle; uniform `uVentCav`, `uAtriaCav`, `uSeptum*`. Shunt: `shuntPaths.ts` (flussi 8–10 delle particelle).

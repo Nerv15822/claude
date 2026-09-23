@@ -5,7 +5,13 @@
  * inviati con postMessage in Float32Array trasferibili, riciclati dal main thread.
  */
 import { CardioEngine, SAMPLE_SIZE } from '../physiology/engine';
-import { FRAME_CAPACITY, SAMPLE_EVERY, type FrameMessage, type ToWorker } from './protocol';
+import {
+  FRAME_CAPACITY,
+  SAMPLE_EVERY,
+  type EngineStatus,
+  type FrameMessage,
+  type ToWorker,
+} from './protocol';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -41,12 +47,29 @@ ctx.onmessage = (ev: MessageEvent<ToWorker>) => {
     case 'pause':
       paused = msg.value;
       break;
+    case 'fluid':
+      engine.fluidBolus(msg.volume, msg.seconds);
+      break;
+    case 'propofol':
+      engine.bolusPropofol(msg.mgPerKg);
+      break;
     case 'recycle':
       if (msg.buffer.byteLength === FRAME_CAPACITY * SAMPLE_SIZE * 4 && pool.length < 8)
         pool.push(msg.buffer);
       break;
   }
 };
+
+function status(): EngineStatus {
+  const r = engine.reflex;
+  return {
+    ce: { ...engine.drugs.ce },
+    propofol: engine.drugs.propofolEffect,
+    reflex: { hr: r.hr, resistance: r.resistance, venous: r.venous, contractility: r.contractility },
+    pendingVolume: engine.target.bloodVolume - engine.totalVolume(),
+    effusion: engine.params.pericardium.effusion,
+  };
+}
 
 function tick(): void {
   const now = performance.now();
@@ -78,6 +101,7 @@ function tick(): void {
     t: engine.t,
     beat: engine.beatCount !== lastBeat ? { ...engine.lastBeat } : null,
     resp: engine.respCount !== lastResp ? { ...engine.lastResp } : null,
+    status: engine.beatCount !== lastBeat ? status() : null,
     realtime: real > 0 ? (count * SAMPLE_EVERY * dt) / real : 0,
   };
   lastBeat = engine.beatCount;

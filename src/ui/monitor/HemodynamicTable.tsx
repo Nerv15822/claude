@@ -15,7 +15,7 @@ export function HemodynamicTable() {
     ['FE VS / VD', `${n(b.ef * 100)} % / ${n(b.rvEf * 100)} %`, ''],
     ['Lavoro sistolico VS', `${n(b.strokeWork * 1.333e-4, 2)} J`, `${n(b.strokeWork)} mmHg·mL`],
     ['RVS / RVP', `${n(b.svr)} / ${n(b.pvr)}`, 'dyn·s·cm⁻⁵'],
-    ['Gradiente aortico', `medio ${n(b.avMeanGradient)} · picco ${n(b.avPeakGradient)}`, 'mmHg'],
+    ['Gradiente VS–aorta', `medio ${n(b.avMeanGradient)} · picco ${n(b.avPeakGradient)}`, 'mmHg'],
     ['Gradiente mitralico', `medio ${n(b.mvMeanGradient, 1)}`, 'mmHg'],
     ['Gradiente polmonare', `medio ${n(b.pvMeanGradient)} · picco ${n(b.pvPeakGradient)}`, 'mmHg'],
     [
@@ -24,7 +24,14 @@ export function HemodynamicTable() {
       '%',
     ],
     ['Qp/Qs', n(b.qpqs, 2), ''],
+    [
+      'Shunt (DIA · DIV · PDA)',
+      `${n(b.asdVolume, 1)} · ${n(b.vsdVolume, 1)} · ${n(b.pdaVolume, 1)}`,
+      'mL/battito',
+    ],
     ['Pressione pericardica', n(b.periMean, 1), 'mmHg'],
+    ['Bilancio O₂ subendocardico', `EVR ${n(b.evr, 2)} (DPTI ${n(b.dpti)} / SPTI ${n(b.spti)})`, 'mmHg·s'],
+    ['Perfusione coronarica', `${n(b.aoDia - b.lvEdp)} (P dia Ao − PTDVS)`, 'mmHg'],
   ];
   return (
     <>

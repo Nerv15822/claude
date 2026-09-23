@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from 'three';
 import { F } from '@physiology/engine';
 import { sampleBuffer } from '@store/sampleBuffer';
+import { useSimulation } from '@store/simulation';
 import type { HeartBuffers } from './heartGeometry';
 import { computeDeform, createDeformState } from './deformation';
 import { applyDeform, createHeartMaterial } from './heartMaterial';
@@ -59,6 +60,9 @@ export function HeartMesh({ cell, onReady }: Props) {
       sampleBuffer.latest(F.pAo),
       sampleBuffer.latest(F.pPA),
       sampleBuffer.latest(F.eV),
+      undefined,
+      sampleBuffer.latest(F.vSpt),
+      useSimulation.getState().morphology,
     );
     applyDeform(uniforms, deform);
   });

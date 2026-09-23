@@ -29,6 +29,8 @@ export interface HeartFrame {
   raCenter: readonly number[];
   /** Distanza base–apice (cm) */
   baseApexLength: number;
+  /** Centri delle valvole (mitrale, aortica, tricuspide, polmonare), se noti */
+  valveCenters?: readonly (readonly number[])[];
   leaflets?: { valve: number; point: number[]; axis: number[] }[];
 }
 
@@ -68,8 +70,17 @@ export function createHeartUniforms(frame: HeartFrame = PROCEDURAL_FRAME): Heart
     hp.push(l ? v3(l.point) : new Vector3());
     ha.push(l ? v3(l.axis).normalize() : new Vector3(0, 1, 0));
   }
+  // Setto: direzione VS→VD perpendicolare all'asse lungo, centro a metà ventricolo
+  const axis = v3(frame.longAxis).normalize();
+  const dir = v3(frame.rvApex).sub(v3(frame.lvApex));
+  const vc = frame.valveCenters;
+  if (vc && vc[0] && vc[2]) dir.add(v3(vc[2]).sub(v3(vc[0])).multiplyScalar(0.5));
+  dir.addScaledVector(axis, -dir.dot(axis)).normalize();
+  const septumC = v3(frame.lvApex)
+    .addScaledVector(axis, -0.5 * frame.baseApexLength)
+    .addScaledVector(dir, 2.4);
   return {
-    uAxis: { value: v3(frame.longAxis).normalize() },
+    uAxis: { value: axis },
     uLvApex: { value: v3(frame.lvApex) },
     uRvApex: { value: v3(frame.rvApex) },
     uLaCenter: { value: v3(frame.laCenter) },
@@ -82,6 +93,10 @@ export function createHeartUniforms(frame: HeartFrame = PROCEDURAL_FRAME): Heart
     uHingeP: { value: hp },
     uHingeA: { value: ha },
     uLeafAngle: { value: new Array<number>(MAX_LEAFLETS).fill(0) },
+    uVentCav: { value: new Vector4(1, 1, 1, 1) },
+    uAtriaCav: { value: new Vector2(1, 1) },
+    uSeptumC: { value: septumC },
+    uSeptum: { value: new Vector4(dir.x, dir.y, dir.z, 0) },
     uDetail: DETAIL,
     uMode: { value: 0 },
     uPressure: { value: new Vector4() },
@@ -277,7 +292,11 @@ export function createSurfaceMaterial(
   }
   material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = injectDeformation(shader.vertexShader, true)
+    shader.vertexShader = injectDeformation(
+      shader.vertexShader,
+      true,
+      kind === 'endocardium' || kind === 'papillary',
+    )
       .replace('#include <common>', `#include <common>\n${VARYINGS_VS}`)
       .replace(
         'vec3 transformed = csPos;',
@@ -295,7 +314,7 @@ roughnessFactor = clamp(roughnessFactor - 0.2 * csFat + 0.06 * csMottle - (csKin
       .replace('#include <emissivemap_fragment>', EMISSIVE_FRAGMENT)
       .replace('#include <opaque_fragment>', xray ? XRAY_OUTPUT : '#include <opaque_fragment>');
   };
-  material.customProgramCacheKey = () => `heart-${kind}-${xray ? 'x' : 'o'}-v3`;
+  material.customProgramCacheKey = () => `heart-${kind}-${xray ? 'x' : 'o'}-v4`;
   return material;
 }
 
@@ -335,9 +354,9 @@ export function createStencilMaterials(
     });
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
-      shader.vertexShader = injectDeformation(shader.vertexShader, false);
+      shader.vertexShader = injectDeformation(shader.vertexShader, false, inverted);
     };
-    m.customProgramCacheKey = () => `heart-stencil-${side}`;
+    m.customProgramCacheKey = () => `heart-stencil-${side}-${inverted ? 'cav' : 'ext'}`;
     return m;
   };
   // Le cavità sono "buchi" nel solido: contano con segno opposto
@@ -352,4 +371,7 @@ export function applyDeform(u: HeartUniforms, d: DeformState): void {
   u.uAtria.value.set(d.la, d.ra);
   u.uVessels.value.set(d.ao, d.pa);
   u.uTwist.value = d.twist;
+  u.uVentCav.value.set(d.lvRadCav, d.lvAx, d.rvRadCav, d.rvAx);
+  u.uAtriaCav.value.set(d.laCav, d.raCav);
+  u.uSeptum.value.w = d.septum;
 }

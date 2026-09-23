@@ -35,7 +35,21 @@ function requestCurve(params: Params) {
   }
   busy = true;
   useAnalysis.setState({ computing: true });
-  send({ type: 'starling', id: ++requestId, params: cloneParams(params) });
+  send({ type: 'starling', id: ++requestId, params: withReflexTone(params) });
+}
+
+/** Congela lo stato attuale del baroriflesso nei parametri (la curva è calcolata a tono fisso). */
+function withReflexTone(params: Params): Params {
+  const p = cloneParams(params);
+  const r = useSimulation.getState().status?.reflex;
+  if (r) {
+    p.rhythm.hr *= r.hr;
+    p.systemic.r *= r.resistance;
+    p.systemic.vv0 *= r.venous;
+    p.lv.ees *= r.contractility;
+    p.rv.ees *= r.contractility;
+  }
+  return p;
 }
 
 /** Avvia il worker di analisi e ricalcola la curva di Starling (con debounce) quando cambiano i parametri. */

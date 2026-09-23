@@ -19,6 +19,7 @@ import { useView } from '../viewStore';
 import type { FlowPath } from './anatomicalAsset';
 import { DEFORM_PARS } from './deformGlsl';
 import type { HeartUniforms } from './heartMaterial';
+import { SHUNT_POINTS } from './shuntPaths';
 
 interface Props {
   paths: FlowPath[];
@@ -26,13 +27,14 @@ interface Props {
   clip: Plane | null;
 }
 
-/** Ordine dei flussi referenziati dai percorsi (vedi scripts/build-anatomy.ts). */
-const FLOWS = [F.qVR, F.qPVin, F.qTV, F.qMV, F.qPV, F.qAV, F.qPULM, F.qSYS];
+/** Ordine dei flussi referenziati dai percorsi (vedi scripts/build-anatomy.ts e shuntPaths.ts). */
+const FLOWS = [F.qVR, F.qPVin, F.qTV, F.qMV, F.qPV, F.qAV, F.qPULM, F.qSYS, F.qASD, F.qVSD, F.qPDA];
 const COUNT = { alta: 24000, media: 12000, bassa: 5000 } as const;
 /** Limite di Nyquist della mappa color-Doppler (cm/s) */
 const NYQUIST = 70;
 
 const VERTEX = /* glsl */ `
+#define CS_CAVITY
 ${DEFORM_PARS}
 #include <clipping_planes_pars_vertex>
 uniform sampler2D uPaths;
@@ -76,7 +78,10 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(dp, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   #include <clipping_planes_vertex>
-  gl_PointSize = uSize * uPixelRatio * (40.0 / -mvPosition.z);
+  bool shunt = aSide > 1.5;
+  gl_PointSize = uSize * uPixelRatio * (40.0 / -mvPosition.z) * (shunt ? 1.6 : 1.0);
+  // Shunt: visibili solo quando il flusso attraversa il difetto
+  float shuntAlpha = shunt ? smoothstep(2.0, 12.0, abs(aVel)) : 1.0;
 
   if (uDoppler > 0.5) {
     // Componente della velocità verso l'osservatore; aliasing oltre il limite di Nyquist
@@ -88,7 +93,17 @@ void main() {
     vColor = w > 0.0 ? mix(vec3(0.5, 0.0, 0.0), vec3(1.0, 0.9, 0.2), k) : mix(vec3(0.0, 0.0, 0.5), vec3(0.3, 0.9, 1.0), k);
     // Flusso turbolento: mosaico con componente verde (varianza)
     if (turb > 0.2) vColor = mix(vColor, vec3(0.2, 1.0, 0.3), step(0.5, fract(aRand.z * 7.0 + uTime * 11.0)) * turb);
-    vAlpha = mix(0.25, 0.95, clamp(abs(aVel) / 30.0, 0.0, 1.0));
+    vAlpha = mix(0.25, 0.95, clamp(abs(aVel) / 30.0, 0.0, 1.0)) * shuntAlpha;
+  } else if (shunt) {
+    // Il sangue shuntato porta la saturazione della camera di origine e si mescola nella camera
+    // ricevente: il colore vira verso il "misto" lungo il percorso (evidenziato)
+    vec3 red = vec3(1.0, 0.18, 0.12);
+    vec3 blue = vec3(0.25, 0.4, 1.0);
+    vec3 src = aVel >= 0.0 ? mix(blue, red, smoothstep(0.55, 0.98, uSaO2)) : mix(blue, red, smoothstep(0.55, 0.98, uSvO2));
+    float u = aS / ${(SHUNT_POINTS - 1).toFixed(1)};
+    float prog = aVel >= 0.0 ? u : 1.0 - u;
+    vColor = mix(src, vec3(0.75, 0.25, 0.85), smoothstep(0.3, 1.0, prog)) * 1.4;
+    vAlpha = shuntAlpha;
   } else {
     float sat = aSide > 0.5 ? uSaO2 : uSvO2;
     // Rosso ossigenato → blu desaturato (convenzione didattica)
@@ -226,13 +241,13 @@ export function FlowParticles({ paths, uniforms, clip }: Props) {
   }, [clip, material]);
 
   const last = useRef(-1);
-  const flows = useMemo(() => new Float64Array(8), []);
+  const flows = useMemo(() => new Float64Array(FLOWS.length), []);
   useFrame(() => {
     if (sampleBuffer.head === 0) return;
     const t = sampleBuffer.latest(F.t);
     const dt = last.current < 0 ? 0 : Math.min(Math.max(t - last.current, 0), 0.05);
     last.current = t;
-    for (let i = 0; i < 8; i++) flows[i] = sampleBuffer.latest(FLOWS[i]!);
+    for (let i = 0; i < FLOWS.length; i++) flows[i] = sampleBuffer.latest(FLOWS[i]!);
     const aS = geo.getAttribute('aS') as BufferAttribute;
     const aVel = geo.getAttribute('aVel') as BufferAttribute;
     const aPath = geo.getAttribute('aPath') as BufferAttribute;

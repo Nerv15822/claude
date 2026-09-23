@@ -20,6 +20,12 @@ export interface DeformUniforms {
   uHingeP: { value: Vector3[] };
   uHingeA: { value: Vector3[] };
   uLeafAngle: { value: number[] };
+  /** Cavità: scale radiali VS/VD (x, z) e assiali (y, w, uguali all'epicardio) */
+  uVentCav: { value: Vector4 };
+  uAtriaCav: { value: Vector2 };
+  /** Setto: centro (cm) e direzione VS→VD + spostamento (w, cm) */
+  uSeptumC: { value: Vector3 };
+  uSeptum: { value: Vector4 };
 }
 
 export const DEFORM_PARS = /* glsl */ `
@@ -36,6 +42,10 @@ uniform float uBaseApex;
 uniform vec3 uHingeP[${MAX_LEAFLETS}];
 uniform vec3 uHingeA[${MAX_LEAFLETS}];
 uniform float uLeafAngle[${MAX_LEAFLETS}];
+uniform vec4 uVentCav;
+uniform vec2 uAtriaCav;
+uniform vec3 uSeptumC;
+uniform vec4 uSeptum;
 
 vec3 csRotate(vec3 v, vec3 k, float a) {
   float c = cos(a), s = sin(a);
@@ -56,12 +66,30 @@ vec3 csVentricle(vec3 p, vec3 apex, float sRad, float sAx, float twist, inout ve
 }
 /** Deforma il punto p (e la normale n) secondo i pesi di regione. */
 vec3 csDeform(vec3 p, inout vec3 n, vec4 ch, vec4 ve, vec3 ax) {
+#ifdef CS_CAVITY
+  vec4 vent = uVentCav;
+  vec2 atria = uAtriaCav;
+#else
+  vec4 vent = uVent;
+  vec2 atria = uAtria;
+#endif
   vec3 acc = vec3(0.0);
-  acc += ch.x * csVentricle(p, uLvApex, uVent.x, uVent.y, uTwist, n, ch.x);
-  acc += ch.y * csVentricle(p, uRvApex, uVent.z, uVent.w, uTwist * 0.6, n, ch.y);
+  acc += ch.x * csVentricle(p, uLvApex, vent.x, vent.y, uTwist, n, ch.x);
+  acc += ch.y * csVentricle(p, uRvApex, vent.z, vent.w, uTwist * 0.6, n, ch.y);
   vec3 descent = uAxis * uBaseApex * (1.0 - uVent.y) * 0.5;
-  acc += ch.z * (uLaCenter + (p - uLaCenter) * uAtria.x + descent);
-  acc += ch.w * (uRaCenter + (p - uRaCenter) * uAtria.y + descent);
+  acc += ch.z * (uLaCenter + (p - uLaCenter) * atria.x + descent);
+  acc += ch.w * (uRaCenter + (p - uRaCenter) * atria.y + descent);
+#ifdef CS_CAVITY
+  // Spostamento del setto interventricolare (interdipendenza, "D-shape"): campo gaussiano
+  // anisotropo attorno alla superficie media del setto, applicato alle superfici endocardiche.
+  vec3 sq = p - uSeptumC;
+  float sa = dot(sq, uAxis);
+  vec3 sr = sq - sa * uAxis;
+  float sn = dot(sr, uSeptum.xyz);
+  float st2 = dot(sr, sr) - sn * sn;
+  float sg = exp(-sn * sn / 1.8 - st2 / 5.0) * (1.0 - smoothstep(0.25, 0.6, abs(sa) / uBaseApex));
+  acc += (ch.x + ch.y) * uSeptum.xyz * (uSeptum.w * sg);
+#endif
   acc += ve.x * (ax + (p - ax) * uVessels.x);
   acc += ve.y * (ax + (p - ax) * uVessels.y);
   acc += (ve.z + ve.w) * (p + descent * 0.4);
@@ -90,10 +118,10 @@ attribute vec2 aLeaf;
 `;
 
 /** Sostituzioni nei chunk standard di three.js (MeshPhysical/Standard/Basic). */
-export function injectDeformation(vertexShader: string, withNormal: boolean): string {
+export function injectDeformation(vertexShader: string, withNormal: boolean, cavity = false): string {
   let vs = vertexShader.replace(
     '#include <common>',
-    `#include <common>\n${DEFORM_ATTRIBUTES}\n${DEFORM_PARS}`,
+    `#include <common>\n${cavity ? '#define CS_CAVITY\n' : ''}${DEFORM_ATTRIBUTES}\n${DEFORM_PARS}`,
   );
   vs = vs.replace(
     'void main() {',

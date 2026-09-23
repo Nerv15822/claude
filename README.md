@@ -24,7 +24,7 @@ Il deploy su GitHub Pages è automatico a ogni push su `main`
 - [x] Fase 3 — tracciati, Wiggers, loop PV
 - [x] Fase 4 — cuore 3D procedurale
 - [x] Fase 5 — valvole, particelle, sezioni
-- [ ] Fase 6 — patologie, interventi, schede didattiche
+- [x] Fase 6 — patologie, interventi, schede didattiche
 - [ ] Fase 7 — rifinitura grafica, performance, PWA
 
 ## Motore fisiologico (`src/physiology`)
@@ -32,19 +32,28 @@ Il deploy su GitHub Pages è automatico a ogni push su `main`
 Modello a parametri concentrati, circolazione chiusa, 15 variabili di stato, integrazione RK4 a passo fisso
 (dt = 0.5 ms) eseguita in un Web Worker (~120× tempo reale su desktop).
 
-| Componente               | Modello                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------ |
-| Camere (VS, VD, AS, AD)  | Elastanza tempo-variante: `P = e(t)·Ees·(V−Vd) + (1−e(t))·P0·(e^{λ(V−V0)}−1)`              |
-| Attivazione ventricolare | Doppia Hill (Stergiopulos 1996), durata ∝ √RR                                              |
-| Attivazione atriale      | Coseno rialzato che inizia con la P; QRS dopo l'intervallo PR                              |
-| Setto                    | Parete libera + setto (Smith 2004), risolto con Newton a ogni valutazione                  |
-| Pericardio               | `Ppc = P0·(e^{(Vcuore+versamento−V0)/Vk}−1)`, agisce su tutte e quattro le camere          |
-| Valvole                  | `L·dQ/dt = ΔP − R·Q − B·Q·abs(Q)`, `B = ρ/2A²` (Bernoulli), `L = ρl/A`; area / EROA        |
-| Circoli                  | Windkessel a 3 elementi (Zc, R, C) + compartimento venoso capacitivo (stressed/unstressed) |
-| Torace                   | Pressione pleurica variabile: apnea, respiro spontaneo, VPP a volume controllato con PEEP  |
-| Shunt                    | DIA, DIV, dotto arterioso: orifizi di Bernoulli con inertanza, bidirezionali               |
-| Ritmo                    | Sinusale, FA (RR irregolare, nessuna sistole atriale), BAV III (dissociazione AV)          |
-| SvO₂                     | Fick semplificato: `SvO₂ = SaO₂ − VO₂/(GC·1.34·Hb·10)`                                     |
+| Componente               | Modello                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| Camere (VS, VD, AS, AD)  | Elastanza tempo-variante: `P = e(t)·Ees·(V−Vd) + (1−e(t))·P0·(e^{λ(V−V0)}−1)`               |
+| Attivazione ventricolare | Doppia Hill (Stergiopulos 1996), durata ∝ √RR                                               |
+| Attivazione atriale      | Coseno rialzato che inizia con la P; QRS dopo l'intervallo PR                               |
+| Setto                    | Parete libera + setto (Smith 2004), risolto con Newton a ogni valutazione                   |
+| Pericardio               | `Ppc = P0·(e^{(Vcuore+versamento−V0)/Vk}−1)`, agisce su tutte e quattro le camere           |
+| Valvole                  | `L·dQ/dt = ΔP − R·Q − B·Q·abs(Q)`, `B = ρ/2A²` (Bernoulli), `L = ρl/A`; area / EROA         |
+| Circoli                  | Windkessel a 3 elementi (Zc, R, C) + compartimento venoso capacitivo (stressed/unstressed)  |
+| Torace                   | Pressione pleurica variabile: apnea, respiro spontaneo, VPP a volume controllato con PEEP   |
+| Shunt                    | DIA, DIV, dotto arterioso: orifizi di Bernoulli con inertanza, bidirezionali                |
+| Ritmo                    | Sinusale, FA (RR irregolare, nessuna sistole atriale), BAV III (dissociazione AV)           |
+| SvO₂                     | Fick semplificato: `SvO₂ = SaO₂ − VO₂/(GC·1.34·Hb·10)`                                      |
+| Baroriflesso             | PAM filtrata → FC, resistenze, capacità venosa, contrattilità (τ 3/8/20/10 s, con limiti)   |
+| Farmaci                  | Concentrazione all'effettore del 1° ordine + effetti Emax come moltiplicatori (`drugs.ts`)  |
+| IABP                     | Volume del pallone nel compartimento arterioso: gonfia all'incisura dicrota, sgonfia al QRS |
+| CMIO                     | Area del LVOT funzione del volume del VS (ostruzione dinamica da SAM)                       |
+| Bilancio O₂              | Indici di Buckberg: DPTI, SPTI, EVR = DPTI/SPTI                                             |
+
+I parametri hanno tre livelli: **obiettivo** (utente/preset) → **base** (raggiunge l'obiettivo con una
+costante di tempo, 1.5 s di default, 12 s per il versamento pericardico) → **effettivo** (base × farmaci ×
+riflesso). La volemia cambia per infusione/rimozione a ≤ 25 mL/s (i boli con la loro velocità).
 
 ### Validazione (caso normale, FC 70, respiro spontaneo)
 
@@ -63,6 +72,34 @@ tamponamento (equalizzazione delle pressioni, polso paradosso > 10 mmHg), PPV > 
 PEEP, tachicardia, FA, BAV III, DIV (Qp/Qs > 1.5).
 
 `npm run calibrate -- '{"aortic":{"area":0.7}}'` stampa i valori a regime per qualsiasi patch di parametri.
+
+## Patologie e terapia (`src/pathologies`, Fase 6)
+
+26 casi, ognuno con uno slider di gravità (lieve → grave) che interpola in modo continuo parametri e
+morfologia (spessore di parete nella scena), e una scheda didattica: fisiopatologia, emodinamica attesa,
+segni ecocardiografici, obiettivi anestesiologici (FC, precarico, postcarico, contrattilità: cosa fare / cosa
+evitare), messaggio chiave e prove da fare nel simulatore. Avvisi contestuali (`alerts.ts`) interpretano lo
+stato corrente (es. EVR < 0.5 nella stenosi aortica, inotropi nella CMIO, nitrati nell'infarto del VD).
+
+| Categoria    | Casi                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| Valvulopatie | Stenosi aortica, insufficienza aortica cronica, stenosi mitralica, IM acuta e cronica, IT, stenosi polmonare |
+| Miocardio    | HFrEF, HFpEF, CMIO con SAM (gradiente dinamico), infarto del VD, infarto anteriore esteso                    |
+| Pericardio   | Tamponamento (polso paradosso, equalizzazione), pericardite costrittiva (dip-and-plateau)                    |
+| Polmonare    | Embolia massiva (dilatazione del VD, shift settale), ipertensione polmonare cronica                          |
+| Shock        | Ipovolemico, settico/distributivo, cardiogeno, ostruttivo (pneumotorace iperteso)                            |
+| Shunt        | DIA, DIV, dotto arterioso (particelle dello shunt evidenziate)                                               |
+| Aritmie      | FA, bradicardia, tachicardia sopraventricolare, BAV III                                                      |
+
+Terapia: boli di liquidi (250/500 mL), emorragia, propofol (1–2 mg/kg), noradrenalina, adrenalina,
+dobutamina, vasopressina, esmololo, nitroglicerina, milrinone (comparsa graduale, barra della concentrazione
+all'effettore), VPP/PEEP, pericardiocentesi, IABP 1:1 (pallone visibile nell'aorta discendente), stato del
+baroriflesso. Ogni preset ha un test di direzione e monotonia (`tests/pathologies/presets.test.ts`).
+
+**Perché tachicardia e vasodilatazione sono pericolose nella stenosi aortica:** l'orifizio fisso impedisce alla
+gittata di aumentare. Ridurre le RVS abbassa quindi la pressione diastolica aortica (apporto coronarico = DPTI),
+mentre la pressione sistolica del VS (domanda = SPTI) resta alta; la tachicardia accorcia la diastole. L'EVR
+scende sotto la soglia di ischemia subendocardica (~0.5). Lo verifica `tests/physiology/reflex-drugs.test.ts`.
 
 ## Cuore 3D (`src/scene`)
 
@@ -179,11 +216,27 @@ Da leggere prima di usare il simulatore per la didattica.
 
 - **Parametri concentrati:** nessuna propagazione né riflessione d'onda (salvo l'effetto di Zc), nessun
   gradiente centro-periferia; la "PA" è la pressione aortica prossimale.
-- **Nessun controllo riflesso (baroriflesso, venocostrizione, RAAS):** FC, resistenze e volume stressed
-  cambiano solo se li modifica l'utente o un preset. In ipovolemia e nel tamponamento mancano quindi la
-  tachicardia e la venocostrizione compensatorie. Per esempio, nel tamponamento le pressioni si equalizzano
-  a ~8–10 mmHg invece dei 15–20 osservati in clinica, dove la venocostrizione alza la pressione media di
-  riempimento. I preset della Fase 6 introdurranno la compensazione in modo esplicito.
+- **Baroriflesso semplificato:** un solo sensore (PAM aortica filtrata, τ 2 s), set-point fisso (99.5 mmHg,
+  il valore normale del modello), effettori lineari nell'errore frazionale con costanti di tempo e limiti
+  fissi. Mancano chemocettori, recettori cardiopolmonari, RAAS e adattamenti a lungo termine; il set-point non
+  si resetta. Nel tamponamento le pressioni si equalizzano a ~10 mmHg invece dei 15–20 clinici (la
+  venocostrizione modellata è limitata a −12 % del volume unstressed).
+- **Farmaci:** una sola costante di tempo per la comparsa dell'effetto (nessun modello multi-compartimentale,
+  nessuna eliminazione dopo la sospensione diversa dalla comparsa), effetti Emax moltiplicativi indipendenti
+  (nessuna interazione recettoriale). Dosi, EC50 e ampiezze sono tarati su direzione e ordine di grandezza
+  clinici, non su dati di farmacocinetica individuale. Propofol: plasma → effettore τ 45 s, ridistribuzione
+  τ 300 s; riduce RVS, tono venoso, contrattilità e guadagno del riflesso.
+- **Boli di liquidi:** infusi a velocità accelerata (250 mL/min) per restare in tempi didattici; nessuna
+  ridistribuzione interstiziale.
+- **IABP:** il pallone sottrae volume al compartimento arterioso sistemico (unico, senza posizione lungo
+  l'aorta); gonfiaggio/sgonfiaggio con τ 35 ms, temporizzazione ideale.
+- **CMIO:** l'ostruzione dinamica è un'area del LVOT che si riduce con il volume del VS (smoothstep); il SAM e
+  l'IM sono accoppiati solo tramite un EROA fisso.
+- **Preset delle patologie:** combinazioni di parametri scelte per riprodurre l'emodinamica tipica di ciascun
+  quadro (verificata dai test di direzione), non adattate a pazienti reali. Gli adattamenti cronici (dilatazione,
+  ipertrofia, espansione della volemia) sono impliciti nei parametri. Nella pericardite costrittiva la
+  rigidità pericardica è limitata dalla stabilità numerica (vk ≥ 6 mL). Le onde "a cannone" del BAV III sono
+  presenti ma modeste (~+3 mmHg) per l'elastanza atriale calibrata sul normale.
 - **EDPVR esponenziale:** nella fase diastolica si usa una relazione esponenziale al posto dell'Emin lineare
   del modello di Suga-Sagawa "puro", per rappresentare correttamente dilatazione, rigidità e tamponamento.
 - **Setto a relazione passiva simmetrica (sinh):** a differenza di Smith 2004 permette gradienti transsettali
@@ -197,11 +250,13 @@ Da leggere prima di usare il simulatore per la didattica.
   la pressione pleurica è una frazione fissa (default 0.5) della pressione alveolare.
 - **Pressione pleurica di fine espirazione:** −3 mmHg; tutte le pressioni riportate sono assolute (riferite
   all'atmosfera), come in un trasduttore azzerato.
-- **Ossigenazione:** VO₂ costante, SaO₂ fissa (98 %), O₂ disciolto trascurato, nessun effetto dello shunt
-  sulla SaO₂.
+- **Ossigenazione:** VO₂ costante, SaO₂ fissa per preset (98 % nel normale; ridotta dai preset di embolia,
+  ipertensione polmonare e pneumotorace), O₂ disciolto trascurato, nessun effetto dello shunt sulla SaO₂.
 - **Ritmo:** la durata dell'attivazione ventricolare scala con √RR; in FA l'RR è estratto da una
   gaussiana troncata (CV 20 %) con PRNG deterministico.
-- **Coronarie, autoregolazione e ischemia:** non modellate nel motore.
+- **Coronarie, autoregolazione e ischemia:** non modellate nel motore; il bilancio O₂ subendocardico è solo
+  un indice (EVR di Buckberg calcolato con la pressione del VS invece di quella atriale), non retroagisce sulla
+  contrattilità.
 - **ECG:** sintetico (somma di gaussiane agganciate agli eventi del motore), non elettrofisiologico.
 - **Fonocardiogramma:** schematico. S1 ed S2 compaiono alla chiusura valvolare e la loro ampiezza è
   proporzionale a dP/dt e alla pressione a valle. S3 e S4 usano soglie euristiche sulla pressione atriale
@@ -228,3 +283,11 @@ Da leggere prima di usare il simulatore per la didattica.
   assiale e radiale dell'accorciamento (esponenti 0.3/0.35), la torsione massima (≈ 11°) e la distensibilità
   visiva dei vasi sono scelte per plausibilità. I volumi delle camere sono invece quelli del motore. Con un
   modello GLB esterno la deformazione è per mesh (scala attorno al baricentro), quindi più grossolana.
+- **Morfologia delle patologie nella scena:** l'ipertrofia è un fattore di volume di parete che ispessisce
+  l'epicardio in direzione radiale. Le cavità (endocardio, papillari, particelle) seguono il volume della cavità
+  con lo stesso accorciamento assiale dell'epicardio. Lo spostamento del setto è un campo gaussiano attorno
+  alla superficie media del setto, pari a 0.12 cm per mL di variazione del volume settale del motore (max
+  ±1.2 cm): un'amplificazione visiva per rendere visibile il "D-shape".
+- **Shunt nella scena:** DIA, DIV e dotto sono segmenti rettilinei posti dove i percorsi del flusso dei due
+  circuiti sono più vicini, non difetti anatomici modellati. Il pallone dell'IABP segue la centerline
+  dell'aorta discendente del modello.

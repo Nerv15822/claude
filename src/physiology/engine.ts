@@ -3,7 +3,7 @@
  */
 import { AUX_SIZE, A, S, STATE_SIZE, clampValves, evaluate, type EvalContext } from './model';
 import { BeatAnalyzer, RespAnalyzer, type BeatMetrics, type RespMetrics } from './metrics';
-import { DrugState, neutralModifiers, type Modifiers } from './drugs';
+import { DRUG_KEYS, DrugState, neutralModifiers, type Modifiers } from './drugs';
 import { applyPatch, cloneParams, defaultParams, type Params, type ParamsPatch } from './params';
 import { ecgValue } from './ecg';
 import { RhythmScheduler } from './rhythm';
@@ -51,6 +51,7 @@ export const SAMPLE_FIELDS = [
   'qPVin',
   'qSYS',
   'qPULM',
+  'balloon',
 ] as const;
 export type SampleField = (typeof SAMPLE_FIELDS)[number];
 export const SAMPLE_SIZE = SAMPLE_FIELDS.length;
@@ -157,7 +158,10 @@ export class CardioEngine {
     this.dt = opts.dt ?? DEFAULT_DT;
     this.rhythm = new RhythmScheduler(opts.seed ?? 1);
     this.ctx = { eV: 0, eA: 0, vent: this.vent, infusion: 0, septumGuess: 3, balloon: 0 };
+    // Infusioni già in corso all'avvio: concentrazioni all'effettore a regime
+    for (const k of DRUG_KEYS) this.drugs.ce[k] = p0.drugs[k];
     this.initState();
+    this.modulate(0);
   }
 
   /** Distribuzione iniziale plausibile della volemia; il regime si raggiunge in pochi secondi. */
@@ -492,6 +496,7 @@ export class CardioEngine {
     out[offset + F.qPVin] = a[A.Q_PVN]!;
     out[offset + F.qSYS] = a[A.Q_SYS]!;
     out[offset + F.qPULM] = a[A.Q_PULM]!;
+    out[offset + F.balloon] = this.balloon;
   }
 
   get lastBeat(): BeatMetrics {

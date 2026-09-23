@@ -3,7 +3,10 @@ import { startAnalysis } from '@store/analysis';
 import { startEngine, useSimulation } from '@store/simulation';
 import { useView, type ViewPreset } from '@scene/viewStore';
 import styles from './App.module.css';
+import { PATHOLOGY_BY_ID } from '@pathologies/index';
 import { PVLoop } from './charts/PVLoop';
+import { PathologyPanel } from './clinical/PathologyPanel';
+import { TherapyPanel } from './clinical/TherapyPanel';
 import { StarlingCurve } from './charts/StarlingCurve';
 import { WiggersDiagram } from './charts/WiggersDiagram';
 import { ControlPanel } from './controls/ControlPanel';
@@ -16,11 +19,13 @@ import { MonitorView } from './monitor/MonitorView';
 // La scena 3D (three.js) è caricata in modo differito: il bundle iniziale resta leggero.
 const HeartScene = lazy(() => import('@scene/HeartScene').then((m) => ({ default: m.HeartScene })));
 
-type Tab = 'monitor' | 'vista' | 'wiggers' | 'pv' | 'starling' | 'dati' | 'controlli';
+type Tab = 'monitor' | 'casi' | 'terapia' | 'vista' | 'wiggers' | 'pv' | 'starling' | 'dati' | 'controlli';
 const TABS: readonly (readonly [Tab, string])[] = [
   ['monitor', 'Monitor'],
+  ['casi', 'Patologie'],
+  ['terapia', 'Terapia'],
   ['vista', 'Vista 3D'],
-  ['controlli', 'Controlli'],
+  ['controlli', 'Parametri'],
   ['wiggers', 'Wiggers'],
   ['pv', 'Loop PV'],
   ['starling', 'Starling'],
@@ -87,6 +92,10 @@ function SheetContent({ tab, height }: { tab: Tab; height: number }) {
       return <HemodynamicTable />;
     case 'controlli':
       return <ControlPanel />;
+    case 'casi':
+      return <PathologyPanel />;
+    case 'terapia':
+      return <TherapyPanel />;
     case 'vista':
       return <ViewPanel />;
   }
@@ -104,6 +113,10 @@ export function App() {
   const quality = useView((s) => s.quality);
   const setQuality = useView((s) => s.setQuality);
   const preset = useView((s) => s.preset);
+  const caseId = useSimulation((s) => s.caseId);
+  const severityLabel = useSimulation((s) =>
+    s.caseId ? (PATHOLOGY_BY_ID[s.caseId]?.gravita(s.severity) ?? '') : '',
+  );
   const [tab, setTab] = useState<Tab>('monitor');
   const [level, setLevel] = useState<SheetLevel>(0);
   const [vh, setVh] = useState(window.innerHeight);
@@ -130,6 +143,16 @@ export function App() {
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <h1>CardioSim 3D</h1>
+          <button
+            className={styles.caseBadge}
+            onClick={() => {
+              setTab('casi');
+              if (level === 0) setLevel(1);
+            }}
+          >
+            {caseId ? PATHOLOGY_BY_ID[caseId]?.nome : 'Cuore normale'}
+            {severityLabel && <small>{severityLabel}</small>}
+          </button>
         </div>
         <div className={styles.actions}>
           <button onClick={() => setPaused(!paused)} aria-label={paused ? 'Riprendi' : 'Pausa'}>
@@ -149,7 +172,7 @@ export function App() {
           >
             {quality === 'alta' ? 'HQ' : quality === 'media' ? 'MQ' : 'LQ'}
           </button>
-          <button onClick={reset} aria-label="Reset">
+          <button onClick={reset} aria-label="Ricomincia il caso" title="Ricomincia il caso (senza terapie)">
             ↺
           </button>
         </div>

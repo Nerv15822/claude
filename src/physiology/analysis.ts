@@ -27,6 +27,8 @@ export const STARLING_OFFSETS = [-1400, -1100, -800, -500, -250, 0, 300, 600, 10
 export function computeStarlingCurve(params: Params, settle = 8, measure = 2): StarlingPoint[] {
   const p = cloneParams(params);
   p.ventilation.mode = 'apnea';
+  // Curva del cuore a tono autonomico fisso: il riflesso compenserebbe le variazioni di precarico
+  p.reflex.enabled = false;
   const base = p.bloodVolume;
   const engine = new CardioEngine({ params: p });
   engine.setBloodVolumeImmediate(base + STARLING_OFFSETS[0]!);

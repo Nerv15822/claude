@@ -28,8 +28,10 @@ import {
   type HeartUniforms,
 } from './heartMaterial';
 import { FlowParticles } from './FlowParticles';
+import { IabpBalloon } from './IabpBalloon';
 import { labelFor } from './labels';
 import { sectionPlane } from './sectionPlanes';
+import { buildShuntPaths } from './shuntPaths';
 import { ValveDynamics } from './valveDynamics';
 
 interface Props {
@@ -158,6 +160,22 @@ export function AnatomicalHeart({ onReady, onError }: Props) {
     });
   }, [asset, section]);
 
+  // Percorsi anatomici + shunt (DIA, DIV, dotto), usati dalle particelle
+  const paths = useMemo(
+    () =>
+      asset
+        ? [...asset.meta.paths, ...buildShuntPaths(asset.meta.paths, asset.meta.valveCenters[1]?.[1] ?? 0)]
+        : [],
+    [asset],
+  );
+
+  // Percorso arterioso che termina più in basso: aorta discendente (sede del pallone dell'IABP)
+  const descending = useMemo(() => {
+    if (!asset) return null;
+    const endY = (p: (typeof asset.meta.paths)[number]) => p.data[p.data.length - p.stride + 1]!;
+    return asset.meta.paths.filter((p) => p.side === 1).sort((a, b) => endY(a) - endY(b))[0] ?? null;
+  }, [asset]);
+
   const frame = useRef({ lastT: -1 });
   useFrame(() => {
     if (!asset || !kit || sampleBuffer.head === 0) return;
@@ -172,6 +190,8 @@ export function AnatomicalHeart({ onReady, onError }: Props) {
       sampleBuffer.latest(F.pPA),
       sampleBuffer.latest(F.eV),
       asset.meta.refVolume,
+      sampleBuffer.latest(F.vSpt),
+      useSimulation.getState().morphology,
     );
     applyDeform(u, deform);
     u.uPressure.value.set(
@@ -238,12 +258,9 @@ export function AnatomicalHeart({ onReady, onError }: Props) {
         frustumCulled={false}
         onDoubleClick={onDouble}
       />
+      {descending && <IabpBalloon path={descending} />}
       {mode !== 'esterna' && mode !== 'attivazione' && (
-        <FlowParticles
-          paths={asset.meta.paths}
-          uniforms={kit.uniforms}
-          clip={mode === 'sezione' ? plane : null}
-        />
+        <FlowParticles paths={paths} uniforms={kit.uniforms} clip={mode === 'sezione' ? plane : null} />
       )}
     </group>
   );
