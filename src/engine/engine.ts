@@ -81,10 +81,13 @@ export class CardioEngine {
     this.modulators.push(m);
   }
 
-  /** Imposta i parametri (obiettivo). Per Fase 1, effParams = params (nessun modulatore). */
+  /**
+   * Imposta i parametri base. `effParams` viene risincronizzato su base; i modulatori
+   * (se presenti) riapplicano i moltiplicatori a ogni passo in `onStep`.
+   */
   setParams(p: Params): void {
     this.params = cloneParams(p);
-    if (this.modulators.length === 0) this.effParams = cloneParams(p);
+    this.effParams = cloneParams(p);
     this.scheduler.setParams(this.effParams.rhythm);
   }
 

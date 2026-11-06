@@ -219,3 +219,59 @@ export function applyPatch(target: Params, patch: ParamsPatch): void {
 export function cloneParams(p: Params): Params {
   return structuredClone(p);
 }
+
+function assignChamber(d: ChamberParams, s: ChamberParams): void {
+  d.ees = s.ees;
+  d.vd = s.vd;
+  d.p0 = s.p0;
+  d.lambda = s.lambda;
+  d.v0 = s.v0;
+}
+function assignValve(d: ValveParams, s: ValveParams): void {
+  d.area = s.area;
+  d.regurgitantArea = s.regurgitantArea;
+  d.length = s.length;
+  d.r = s.r;
+}
+function assignCirc(d: CirculationParams, s: CirculationParams): void {
+  d.zc = s.zc;
+  d.r = s.r;
+  d.ca = s.ca;
+  d.va0 = s.va0;
+  d.cv = s.cv;
+  d.vv0 = s.vv0;
+  d.rv = s.rv;
+}
+
+/**
+ * Copia tutti i campi di `src` in `dst` MUTANDO gli oggetti annidati di `dst` in place
+ * (preserva le identità di `dst.rhythm`, `dst.districts`, ecc.). Usato dal modulatore
+ * clinico per ripartire da base a ogni passo prima di applicare i moltiplicatori.
+ */
+export function assignParams(dst: Params, src: Params): void {
+  Object.assign(dst.rhythm, src.rhythm);
+  assignChamber(dst.lv, src.lv);
+  assignChamber(dst.rv, src.rv);
+  assignChamber(dst.la, src.la);
+  assignChamber(dst.ra, src.ra);
+  assignChamber(dst.septum, src.septum);
+  Object.assign(dst.pericardium, src.pericardium);
+  assignValve(dst.mitral, src.mitral);
+  assignValve(dst.aortic, src.aortic);
+  assignValve(dst.tricuspid, src.tricuspid);
+  assignValve(dst.pulmonic, src.pulmonic);
+  Object.assign(dst.asd, src.asd);
+  Object.assign(dst.vsd, src.vsd);
+  Object.assign(dst.pda, src.pda);
+  assignCirc(dst.systemic, src.systemic);
+  assignCirc(dst.pulmonary, src.pulmonary);
+  Object.assign(dst.ventilation, src.ventilation);
+  Object.assign(dst.oxygen, src.oxygen);
+  dst.infusionRate = src.infusionRate;
+  dst.bloodVolume = src.bloodVolume;
+  if (dst.districts.length !== src.districts.length) {
+    dst.districts = structuredClone(src.districts);
+  } else {
+    for (let i = 0; i < src.districts.length; i++) Object.assign(dst.districts[i]!, src.districts[i]!);
+  }
+}

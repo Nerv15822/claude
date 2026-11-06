@@ -8,3 +8,7 @@ export * from './rhythm';
 export * from './model';
 export * from './metrics';
 export * from './engine';
+export * from './receptors';
+export * from './pharmacology';
+export * from './reflex';
+export * from './therapy';
