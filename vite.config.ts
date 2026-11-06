@@ -10,6 +10,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@engine': r('./src/engine'),
       '@physiology': r('./src/physiology'),
       '@scene': r('./src/scene'),
       '@ui': r('./src/ui'),
