@@ -11,4 +11,6 @@ export * from './engine';
 export * from './receptors';
 export * from './pharmacology';
 export * from './reflex';
+export * from './oxygen';
+export * from './sideEffects';
 export * from './therapy';

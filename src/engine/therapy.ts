@@ -11,8 +11,10 @@
 import type { CardioEngine, Modulator } from './engine';
 import { A } from './model';
 import { assignParams } from './params';
+import { computeOxygen, type OxygenState } from './oxygen';
 import { type DrugEffects, type DrugId, PharmacoState } from './pharmacology';
 import { Baroreflex, type ReflexPreset } from './reflex';
+import { type Alert, assessSideEffects } from './sideEffects';
 import { clamp, smoothstep } from './units';
 
 export interface MetabolicState {
@@ -114,5 +116,14 @@ export class ClinicalModulator implements Modulator {
     for (let i = 0; i < tone.length; i++) {
       tone[i] = eff.districtTone[i]! * this.reflex.arterialCond;
     }
+  }
+
+  /** Trasporto di O₂ ed effetti collaterali calcolati dallo stato corrente (Fase 3). */
+  assess(engine: CardioEngine): { oxygen: OxygenState; alerts: Alert[] } {
+    const beat = engine.currentBeat;
+    const signals = this.lastEffects?.signals ?? null;
+    const oxygen = computeOxygen(beat, engine.params, signals, { temperature: this.metabolic.temperature });
+    const alerts = assessSideEffects(beat, oxygen, signals, this.metabolic);
+    return { oxygen, alerts };
   }
 }
