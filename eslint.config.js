@@ -20,7 +20,7 @@ export default tseslint.config(
   {
     // Scena 3D: gli oggetti three.js (materiali, uniform, piani) sono mutati imperativamente per design,
     // fuori dal ciclo di render React (useFrame): la regola del React Compiler non si applica.
-    files: ['src/scene/**/*.{ts,tsx}'],
+    files: ['src/scene/**/*.{ts,tsx}', 'src/app/scene/**/*.{ts,tsx}'],
     rules: { 'react-hooks/immutability': 'off' },
   },
   {
