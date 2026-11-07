@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "calibrate": "tsx scripts/calibrate.ts"
+    "calibrate": "tsx scripts/calibrate.ts",
+    "calibrate:engine": "tsx scripts/calibrate-engine.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

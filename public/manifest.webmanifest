@@ -1,14 +1,14 @@
 {
-  "name": "CardioSim 3D",
-  "short_name": "CardioSim",
-  "description": "Simulatore emodinamico 3D del cuore per la formazione in Anestesia e Rianimazione",
+  "name": "Emodinamica",
+  "short_name": "Emodinamica",
+  "description": "Simulatore cardiovascolare didattico: motore fisiologico e cuore 3D, per Anestesia e Rianimazione",
   "lang": "it",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#05070a",
-  "theme_color": "#05070a",
+  "theme_color": "#eef1f7",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

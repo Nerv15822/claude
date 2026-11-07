@@ -21,6 +21,7 @@
     "noUnusedParameters": true,
     "baseUrl": ".",
     "paths": {
+      "@engine/*": ["src/engine/*"],
       "@physiology/*": ["src/physiology/*"],
       "@scene/*": ["src/scene/*"],
       "@ui/*": ["src/ui/*"],

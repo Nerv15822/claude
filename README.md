@@ -1,9 +1,108 @@
+# Emodinamica
+
+Simulatore cardiovascolare **didattico** per specializzandi in Anestesia e Rianimazione: motore
+fisiologico reale, farmacologia a vettori recettoriali e cuore 3D procedurale. Mobile-first per
+iPhone (Safari, WebGL2). È l'applicazione pubblicata (`src/main.tsx` → `src/app`). Il motore
+**CardioSim** originale resta nel repository come riferimento (`src/physiology`, `src/scene`,
+`src/ui`); la sua documentazione è più in basso.
+
+**Demo:** https://nerv15822.github.io/claude/
+
+> ⚠️ Modello **qualitativamente corretto** e **quantitativamente indicativo**. Gli EC50 recettoriali
+> in vivo nell'uomo sono mal caratterizzati in letteratura: tutti gli EC50 e i pesi di distretto
+> stanno in un unico file (`src/engine/pharmacology.ts`), ciascuno con fonte o indicazione «stimato».
+> **Strumento didattico, non decisionale.**
+
+## Emodinamica — architettura
+
+| Cartella               | Contenuto                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `src/engine`           | Motore puro TypeScript (zero dipendenze grafiche/UI, testabile da riga di comando) |
+| `src/app/worker`       | Web Worker del solutore (passo fisso) + worker di confronto                        |
+| `src/app/store.ts`     | Stato Zustand; i campioni a 250 Hz non passano per lo stato reattivo (loop rAF)    |
+| `src/app/scene`        | Cuore 3D procedurale (R3F) a contorni luminosi Fresnel                             |
+| `src/app/ui`           | Pannelli, grafici, controlli, modalità Confronto e Sfida (interamente in italiano) |
+| `src/app/scenarios.ts` | 12 scenari precaricati                                                             |
+
+Fasi (ognuna funzionante e verificabile da sola): **1** motore + test → **2** farmacologia +
+baroriflesso + modulatori → **3** trasporto di O₂ + effetti collaterali → **4** scena 3D + UI +
+scenari → **5** ottimizzazione iOS/PWA.
+
+```bash
+npm run calibrate:engine     # valori a regime del caso normale (motore Emodinamica)
+npm test                     # 180+ test del motore e degli scenari
+```
+
+### Motore (`src/engine`)
+
+Modello a parametri concentrati, circolazione chiusa, 12 variabili di stato, **RK4 a dt = 1 ms** nel
+worker. Elastanze tempo-varianti (VS, VD, AS, AD), interdipendenza ventricolare (setto, Smith 2004) e
+pericardio, Windkessel a 3 elementi sistemico e polmonare, valvole come diodi con inertanza e perdita
+di Bernoulli, serbatoio venoso capacitivo con **MSFP e ritorno venoso emergenti dall'integrazione**.
+Il circolo sistemico è scomposto in **sei distretti in parallelo** (splancnico, renale, muscolare,
+cutaneo, coronarico, cerebrale) con autoregolazione di flusso in coronarico e cerebrale.
+
+Validazione del caso normale (`tests/engine/`, 24 test): aorta 120/72 (MAP 98), CO 5.5, PVC 3, PAOP 6,
+AP 21/9 (media 14), MSFP 8.3, FE 60 %, VTD 132; Frank-Starling, Guyton, conservazione del volume,
+stabilità a FC 160 e in VPP+PEEP.
+
+### Farmacologia (`src/engine/pharmacology.ts`)
+
+20 farmaci come **vettori di affinità** su 16 bersagli (α1, α2 centrale/periferico, β1/β2/β3, D1/D2,
+V1a/V2, PDE3, sensibilizzazione al Ca²⁺, K-ATP, NO diretto, inibizione sGC, blocco Ca-L). Occupazione
+con equazione di **Hill**; cinetica all'effettore del primo ordine (onset/offset). Le **fasce
+dose-dipendenti** di dopamina e adrenalina emergono da EC50 diversi (nessuna soglia). Mappatura
+occupazione → parametri con pesi per bersaglio e per **distretto** (α1 non uniforme: cutaneo e
+splancnico i più sensibili, cerebrale il meno; pesi distinti per tono venoso e circolo polmonare).
+Baroriflesso con 6 preset; modulatori di stato (pH, temperatura, downregulation β, K/Mg, volemia).
+
+### Trasporto di O₂ ed effetti collaterali
+
+CaO₂/CvO₂/DO₂/VO₂/SvO₂ (Fick), estrazione, lattato, SpO₂ con shunt, MVO₂, EVR di Buckberg, DO₂ per
+distretto. **Concetto centrale:** si osserva la MAP in aumento con la DO₂ in calo. Gli effetti
+collaterali sono **calcolati** dallo stato (ischemia, aritmia, ipoperfusione regionale, lattato da β2,
+iponatriemia da V2, ipertensione polmonare, inibizione HPV/shunt, metemoglobina/serotonina del blu di
+metilene, cianuro del nitroprussiato, necrosi da stravaso), ciascuno con gravità, meccanismo e variabile.
+
+### Scena 3D e UI
+
+Cuore **procedurale** (nessun asset): camere a forma anatomica (ventricoli con apice appuntito, VD
+a sezione a D/semiluna appoggiato al setto) la cui scala è guidata dal volume del motore, vasi come
+tubi **affusolati e ramificati** su linee centrali curve (arco aortico con tronchi sovraortici,
+biforcazione del tronco polmonare), serbatoio venoso distensibile, setto con curvatura invertibile,
+particelle di flusso additive. `ShaderMaterial` Fresnel con `AdditiveBlending`,
+modalità estetica/analitica (colormap percettivamente uniforme) e piano di sezione. UI a una colonna
+con pannello numerico (delta e direzione), tracciati, loop PV, **diagramma di Guyton live**, flussi
+regionali, banner degli avvisi, scheda farmaco, e modalità **Confronto** e **Sfida**.
+
+### iOS / PWA
+
+`pixelRatio` cappato a 2, `dvh`, `env(safe-area-inset-*)`, target touch 44 pt, `touch-action: none`
+sul canvas, niente pinch-zoom né bounce; degradazione automatica (meno particelle, bloom off, DPR
+adattivo) quando il frame time peggiora. Bundle iniziale ~80 kB gzip (three.js nel chunk lazy della
+scena). PWA installabile e **offline completo** (nessuna chiamata di rete a runtime).
+
+### Approssimazioni (Emodinamica)
+
+- **EC50 e pesi di distretto stimati.** Gli EC50 recettoriali in vivo nell'uomo sono mal
+  caratterizzati: i valori riproducono direzione e ordine di grandezza, non la farmacocinetica
+  individuale. Fonte o «stimato» per ciascuno in `pharmacology.ts`.
+- **EDPVR non lineare.** L'elastanza diastolica Eed del modello lineare `E(t)=Eed+(Ees−Eed)·e(t)` è
+  realizzata come pendenza della EDPVR esponenziale (fedeltà del riempimento > forma lineare).
+- **Distretti puramente resistivi.** I sei letti non hanno uno stato dedicato: flussi e frazioni
+  emergono dai compartimenti arterioso e venoso. L'autoregolazione usa la pressione di perfusione
+  media (il bilancio subendocardico coronarico è separato, via EVR di Buckberg).
+- **Shunt polmonare semplificato** (ammixtione venosa a una frazione) per la SpO₂ e l'inibizione HPV.
+- **MVO₂ ed EVR indicativi**, derivati da PVA·FC e da stime di durata sistolica/diastolica.
+- **Sezione 3D** approssimata (scarto dei frammenti anteriori), senza capping a stencil.
+- **Boli** modellati come livello di dose che decade; la variabilità dell'RR in FA è deterministica.
+
+---
+
 # CardioSim 3D
 
 Simulatore emodinamico 3D del cuore, pensato per iPhone (Safari, WebGL2) e per la formazione in
-Anestesia e Rianimazione.
-
-**Demo:** https://nerv15822.github.io/claude/
+Anestesia e Rianimazione. _(Motore e scena di riferimento; l'app pubblicata è Emodinamica, sopra.)_
 
 ## Sviluppo
 

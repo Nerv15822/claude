@@ -20,12 +20,12 @@ export default tseslint.config(
   {
     // Scena 3D: gli oggetti three.js (materiali, uniform, piani) sono mutati imperativamente per design,
     // fuori dal ciclo di render React (useFrame): la regola del React Compiler non si applica.
-    files: ['src/scene/**/*.{ts,tsx}'],
+    files: ['src/scene/**/*.{ts,tsx}', 'src/app/scene/**/*.{ts,tsx}'],
     rules: { 'react-hooks/immutability': 'off' },
   },
   {
-    // Il motore fisiologico deve restare puro: nessuna dipendenza grafica o UI.
-    files: ['src/physiology/**/*.ts'],
+    // I motori fisiologici (CardioSim e Emodinamica) devono restare puri: niente grafica/UI.
+    files: ['src/physiology/**/*.ts', 'src/engine/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -33,11 +33,11 @@ export default tseslint.config(
           patterns: [
             {
               group: ['react', 'react-dom', 'three', '@react-three/*', 'zustand'],
-              message: 'Il motore fisiologico non può dipendere da librerie grafiche/UI.',
+              message: 'Il motore non può dipendere da librerie grafiche/UI.',
             },
             {
               group: ['@scene/*', '@ui/*', '@store/*', '../scene/*', '../ui/*', '../store/*'],
-              message: 'Il motore fisiologico non può importare scene/ui/store.',
+              message: 'Il motore non può importare scene/ui/store.',
             },
           ],
         },
