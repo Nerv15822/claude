@@ -4,10 +4,10 @@
  * volume calcolato dal motore: la mesh È il modello. Vasi come tubi su curve CatmullRom,
  * serbatoio venoso distensibile, setto con curvatura che si inverte quando P(VD) > P(VS).
  */
-import { OrbitControls } from '@react-three/drei';
+import { AdaptiveDpr, OrbitControls, PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Bloom, EffectComposer } from '@react-three/postprocessing';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { SAMPLE, SAMPLE_STRIDE } from '../worker/protocol';
 import { getSamples, useStore } from '../store';
@@ -248,8 +248,11 @@ function ventScalar(volField: number, pField: number): number {
   }
 }
 
-function Content() {
+function Content({ low }: { low: boolean }) {
   const co = () => useStore.getState().beat?.co ?? 5;
+  // Degradazione automatica: metà particelle in modalità "low".
+  const nA = low ? 120 : 240;
+  const nP = low ? 100 : 200;
   return (
     <group scale={0.9}>
       <ambientLight intensity={0.3} />
@@ -275,8 +278,8 @@ function Content() {
       <Vessel points={VENE_CAVE} color="#3b74ff" radius={0.3} />
       <Vessel points={VENE_POLM} color="#16c7d6" radius={0.22} />
       <Reservoir />
-      <FlowParticles points={AORTA} color="#ffb199" n={240} flowFor={co} />
-      <FlowParticles points={PA} color="#8fe8f2" n={200} flowFor={co} />
+      <FlowParticles points={AORTA} color="#ffb199" n={nA} flowFor={co} />
+      <FlowParticles points={PA} color="#8fe8f2" n={nP} flowFor={co} />
     </group>
   );
 }
@@ -284,7 +287,8 @@ function Content() {
 export default function HeartScene() {
   const bloom = useStore((s) => s.bloom);
   const viewMode = useStore((s) => s.viewMode);
-  const useBloom = bloom && viewMode === 'estetica';
+  const [low, setLow] = useState(false);
+  const useBloom = bloom && viewMode === 'estetica' && !low;
   return (
     <Canvas
       gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
@@ -292,7 +296,9 @@ export default function HeartScene() {
       camera={{ position: [0, 0.5, 9], fov: 42 }}
       style={{ background: 'transparent' }}
     >
-      <Content />
+      <PerformanceMonitor onDecline={() => setLow(true)} onIncline={() => setLow(false)} />
+      <AdaptiveDpr pixelated />
+      <Content low={low} />
       <OrbitControls enablePan={false} enableZoom minPolarAngle={0.4} maxPolarAngle={2.6} rotateSpeed={0.7} />
       {useBloom ? (
         <EffectComposer>

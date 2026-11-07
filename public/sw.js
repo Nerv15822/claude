@@ -1,10 +1,10 @@
 /*
- * Service worker di CardioSim 3D: uso offline dopo la prima apertura.
+ * Service worker di Emodinamica: uso offline dopo la prima apertura.
  * - Navigazione (index.html): rete prima, cache come ripiego (gli aggiornamenti arrivano subito).
  * - /assets/ (nomi con hash, immutabili): cache prima.
  * - Modello anatomico e icone: cache, aggiornata in background (stale-while-revalidate).
  */
-const VERSION = 'cardiosim-v1';
+const VERSION = 'emodinamica-v1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon.svg'];
 const MAX_ASSETS = 80;
 

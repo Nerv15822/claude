@@ -50,6 +50,8 @@ body {
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
+  /* niente bounce di overscroll (iOS) */
+  overscroll-behavior: none;
 }
 
 .em-app {
