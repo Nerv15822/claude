@@ -66,9 +66,11 @@ export function ventricleGeometry(opts: VentricleOpts): THREE.BufferGeometry {
     const d = Math.cos(a - septalAngle); // 1 sul lato settale
     if (crescent) {
       // Faccia settale fortemente appiattita/concava → sezione a D.
-      const flat = 1 - 0.62 * Math.max(d, 0) ** 1.25;
-      const latBulge = 1 + 0.12 * Math.max(-d, 0); // leggera convessità laterale
-      return flat * latBulge;
+      // Faccia settale concava (incavo) + "corna" tangenziali → semiluna che avvolge il VS.
+      const notch = 1 - 0.8 * Math.max(d, 0);
+      const horns = 1 + 0.24 * Math.sin(a - septalAngle) ** 2;
+      const latBulge = 1 + 0.12 * Math.max(-d, 0);
+      return notch * horns * latBulge;
     }
     // VS: quasi circolare, lieve appiattimento settale.
     return (1 - 0.1 * Math.max(d, 0)) * (1 - 0.04 * Math.cos(2 * (a - septalAngle)));

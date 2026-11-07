@@ -106,7 +106,7 @@ function makeVesselMat(color: string, glow: number): THREE.ShaderMaterial {
 
 function Vessels() {
   const geos = useMemo(() => buildVessels(), []);
-  const matAorta = useMemo(() => makeVesselMat('#ff6a3c', 1.0), []);
+  const matAorta = useMemo(() => makeVesselMat('#ff6a3c', 0.85), []);
   const matPulm = useMemo(() => makeVesselMat('#16c7d6', 0.72), []);
   const matCaval = useMemo(() => makeVesselMat('#3b74ff', 0.5), []);
   const matVeins = useMemo(() => makeVesselMat('#17b6c7', 0.5), []);
@@ -209,9 +209,9 @@ function FlowParticles({
     () =>
       new THREE.PointsMaterial({
         color: new THREE.Color(color),
-        size: 0.1,
+        size: 0.085,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.5,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         sizeAttenuation: true,
@@ -272,7 +272,7 @@ function Content({ low }: { low: boolean }) {
         length={3.0}
         rMax={1.2}
         crescent={false}
-        septalAngle={Math.PI}
+        septalAngle={2.68}
         pos={[0.5, -1.5, 0.1]}
         color="#ff5a3c"
         scalarFor={() => ventScalar(SAMPLE.vlv, SAMPLE.plv)}
@@ -283,8 +283,8 @@ function Content({ low }: { low: boolean }) {
         length={2.75}
         rMax={1.42}
         crescent
-        septalAngle={0}
-        pos={[-0.2, -1.35, 0.35]}
+        septalAngle={-0.46}
+        pos={[-0.15, -1.35, 0.42]}
         color="#3b74ff"
         scalarFor={() => ventScalar(SAMPLE.vrv, SAMPLE.prv)}
       />
