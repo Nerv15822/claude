@@ -3,6 +3,46 @@ import { useStore } from '../store';
 
 const HeartScene = lazy(() => import('../scene/HeartScene'));
 
+const ANALYTIC_SCALE: Record<string, { label: string; max: string }> = {
+  stress: { label: 'Stress parietale (Laplace, P·r)', max: 'alto' },
+  perfusione: { label: 'Perfusione coronarica', max: '0.6 L/min' },
+  mvo2: { label: 'MVO₂', max: '60 mL/min' },
+};
+
+/** Legenda numerica della modalità analitica (colormap viridis, percettivamente uniforme). */
+function AnalyticLegend({ which }: { which: string }) {
+  const s = ANALYTIC_SCALE[which] ?? ANALYTIC_SCALE.stress!;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 10,
+        bottom: 10,
+        padding: '6px 8px',
+        borderRadius: 8,
+        background: 'rgba(8,12,18,0.72)',
+        border: '1px solid rgba(255,255,255,0.14)',
+        color: '#dbe6f3',
+        fontSize: 10.5,
+        maxWidth: 190,
+      }}
+    >
+      <div style={{ marginBottom: 4 }}>{s.label}</div>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 4,
+          background: 'linear-gradient(90deg,#440154,#31688e,#35b779,#fde725)',
+        }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+        <span>0</span>
+        <span>{s.max}</span>
+      </div>
+    </div>
+  );
+}
+
 export function SceneBox() {
   const viewMode = useStore((s) => s.viewMode);
   const setViewMode = useStore((s) => s.setViewMode);
@@ -21,6 +61,7 @@ export function SceneBox() {
       <Suspense fallback={null}>
         <HeartScene />
       </Suspense>
+      {viewMode === 'analitica' ? <AnalyticLegend which={analyticVar} /> : null}
       <div className="em-scene-controls">
         {viewMode === 'analitica' ? (
           <select
