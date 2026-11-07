@@ -1,8 +1,8 @@
 /**
  * Emodinamica — cuore 3D PROCEDURALE (nessun asset esterno). Contorni luminosi (Fresnel) su
- * fondo nero. I ventricoli sono ellissoidi prolati i cui semiassi si ricavano INVERTENDO il
- * volume calcolato dal motore: la mesh È il modello. Vasi come tubi su curve CatmullRom,
- * serbatoio venoso distensibile, setto con curvatura che si inverte quando P(VD) > P(VS).
+ * fondo nero. Le camere hanno forma anatomica (apice appuntito, VD a semiluna/D), i vasi sono
+ * tubi affusolati e ramificati (arco aortico con tronchi sovraortici, biforcazione polmonare).
+ * Il volume del motore guida la scala delle camere, ancorata all'apice: la mesh resta il modello.
  */
 import { AdaptiveDpr, OrbitControls, PerformanceMonitor } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -11,18 +11,15 @@ import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { SAMPLE, SAMPLE_STRIDE } from '../worker/protocol';
 import { getSamples, useStore } from '../store';
+import { CENTERLINES, atriumGeometry, buildVessels, ventricleGeometry } from './cardiacGeometry';
 import { createFresnelMaterial } from './fresnelMaterial';
+
+type V3 = [number, number, number];
 
 function lastSample(field: number): number {
   const { buffer, count } = getSamples();
   if (count < 1) return 0;
   return buffer[(count - 1) * SAMPLE_STRIDE + field] ?? 0;
-}
-
-/** Semiasse corto di un ellissoide prolato di volume V (cm³) e rapporto d'asse AR. */
-function shortAxis(volumeMl: number, ar: number): number {
-  const v = Math.max(volumeMl, 5) * 0.55; // scala cm→unità di scena
-  return Math.cbrt((3 * v) / (4 * Math.PI * ar));
 }
 
 function applyCommon(mat: THREE.ShaderMaterial, scalar: number): void {
@@ -34,68 +31,99 @@ function applyCommon(mat: THREE.ShaderMaterial, scalar: number): void {
 
 function Ventricle({
   volField,
-  ar,
-  x,
+  vref,
+  length,
+  rMax,
+  crescent,
+  septalAngle,
+  pos,
   color,
   scalarFor,
 }: {
   volField: number;
-  ar: number;
-  x: number;
+  vref: number;
+  length: number;
+  rMax: number;
+  crescent: boolean;
+  septalAngle: number;
+  pos: V3;
   color: string;
   scalarFor: () => number;
 }) {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useMemo(() => createFresnelMaterial(color), [color]);
+  const geo = useMemo(
+    () => ventricleGeometry({ length, rMax, crescent, septalAngle }),
+    [length, rMax, crescent, septalAngle],
+  );
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
-    const v = lastSample(volField);
-    const b = shortAxis(v, ar);
-    m.scale.set(b, b * ar, b);
+    const rho = Math.max(lastSample(volField), 15) / vref;
+    const radial = Math.pow(rho, 0.46);
+    const axial = Math.pow(rho, 0.12);
+    m.scale.set(radial, axial, radial);
     applyCommon(mat, scalarFor());
   });
-  return (
-    <mesh ref={ref} position={[x, 0, 0]} material={mat}>
-      <sphereGeometry args={[1, 32, 24]} />
-    </mesh>
-  );
+  return <mesh ref={ref} geometry={geo} material={mat} position={pos} />;
 }
 
-function Atrium({ volField, x, y, color }: { volField: number; x: number; y: number; color: string }) {
+function Atrium({
+  volField,
+  vref,
+  pos,
+  radius,
+  color,
+  appendage,
+}: {
+  volField: number;
+  vref: number;
+  pos: V3;
+  radius: number;
+  color: string;
+  appendage: V3;
+}) {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useMemo(() => createFresnelMaterial(color), [color]);
+  const geo = useMemo(() => atriumGeometry(radius, appendage), [radius, appendage]);
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
-    const v = lastSample(volField);
-    const s = shortAxis(Math.max(v, 20), 1.0) * 0.9;
+    const rho = Math.max(lastSample(volField), 20) / vref;
+    const s = Math.pow(rho, 0.33) * 0.55;
     m.scale.setScalar(s);
-    applyCommon(mat, 0.3);
+    applyCommon(mat, 0.28);
   });
-  return (
-    <mesh ref={ref} position={[x, y, 0]} material={mat}>
-      <sphereGeometry args={[1, 24, 18]} />
-    </mesh>
-  );
+  return <mesh ref={ref} geometry={geo} material={mat} position={pos} />;
 }
 
-function Vessel({
-  points,
-  color,
-  radius = 0.28,
-}: {
-  points: [number, number, number][];
-  color: string;
-  radius?: number;
-}) {
-  const mat = useMemo(() => createFresnelMaterial(color), [color]);
-  const geo = useMemo(() => {
-    const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
-    return new THREE.TubeGeometry(curve, 40, radius, 12, false);
-  }, [points, radius]);
-  useFrame(() => applyCommon(mat, 0.5));
-  return <mesh geometry={geo} material={mat} />;
+function makeVesselMat(color: string, glow: number): THREE.ShaderMaterial {
+  const m = createFresnelMaterial(color);
+  m.uniforms.uGlow!.value = glow;
+  m.uniforms.uPower!.value = 2.6;
+  return m;
+}
+
+function Vessels() {
+  const geos = useMemo(() => buildVessels(), []);
+  const matAorta = useMemo(() => makeVesselMat('#ff6a3c', 1.0), []);
+  const matPulm = useMemo(() => makeVesselMat('#16c7d6', 0.72), []);
+  const matCaval = useMemo(() => makeVesselMat('#3b74ff', 0.5), []);
+  const matVeins = useMemo(() => makeVesselMat('#17b6c7', 0.5), []);
+  useFrame(() => {
+    applyCommon(matAorta, 0.75);
+    applyCommon(matPulm, 0.4);
+    applyCommon(matCaval, 0.25);
+    applyCommon(matVeins, 0.4);
+  });
+  return (
+    <>
+      <mesh geometry={geos.aorta} material={matAorta} />
+      <mesh geometry={geos.pulm} material={matPulm} />
+      <mesh geometry={geos.caval} material={matCaval} />
+      <mesh geometry={geos.pulmVeins} material={matVeins} />
+    </>
+  );
 }
 
 /** Serbatoio venoso di capacitanza: raggio ∝ volume stressato (viola). */
@@ -106,12 +134,12 @@ function Reservoir() {
     const m = ref.current;
     if (!m) return;
     const sv = useStore.getState().beat?.stressedVolume ?? 1100;
-    const s = 1.3 + (sv / 1100) * 0.7;
-    m.scale.set(s, s * 0.7, s);
+    const s = 0.85 + (sv / 1100) * 0.4;
+    m.scale.set(s, s * 0.6, s);
     applyCommon(mat, 0.15);
   });
   return (
-    <mesh ref={ref} position={[0, -3.1, -0.6]} material={mat}>
+    <mesh ref={ref} position={[0.1, -2.45, -0.8]} material={mat}>
       <sphereGeometry args={[1, 24, 16]} />
     </mesh>
   );
@@ -122,17 +150,17 @@ function Septum() {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useMemo(() => {
     const m = createFresnelMaterial('#ff8a5c');
-    m.uniforms.uGlow!.value = 0.8;
+    m.uniforms.uGlow!.value = 0.75;
     return m;
   }, []);
   const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(2.2, 3.4, 10, 16);
+    const g = new THREE.PlaneGeometry(1.7, 2.5, 10, 16);
     const pos = g.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
       const px = pos.getX(i);
       const py = pos.getY(i);
-      const dome = Math.cos((px / 1.1) * (Math.PI / 2)) * Math.cos((py / 1.7) * (Math.PI / 2));
-      pos.setZ(i, dome); // cupola di riferimento lungo z locale
+      const dome = Math.cos((px / 0.95) * (Math.PI / 2)) * Math.cos((py / 1.5) * (Math.PI / 2));
+      pos.setZ(i, dome);
     }
     g.computeVertexNormals();
     return g;
@@ -142,24 +170,29 @@ function Septum() {
     if (!m) return;
     const plv = lastSample(SAMPLE.plv);
     const prv = lastSample(SAMPLE.prv);
-    // curvatura positiva verso il VD (−x); si inverte se P(VD) > P(VS).
     const curv = THREE.MathUtils.clamp((plv - prv) / 60, -0.9, 0.9);
-    m.scale.z = 0.2 + curv; // può diventare negativo (inversione)
+    m.scale.z = 0.2 + curv;
     applyCommon(mat, 0.5);
   });
   return (
-    <mesh ref={ref} geometry={geo} rotation={[0, Math.PI / 2, 0]} position={[-0.1, 0, 0]} material={mat} />
+    <mesh
+      ref={ref}
+      geometry={geo}
+      rotation={[0, Math.PI / 2, 0]}
+      position={[0.12, -0.1, 0.15]}
+      material={mat}
+    />
   );
 }
 
-/** Particelle di flusso lungo una curva, additive; densità/velocità ∝ portata. */
+/** Particelle di flusso lungo una linea centrale, additive; densità/velocità ∝ portata. */
 function FlowParticles({
   points,
   color,
   n,
   flowFor,
 }: {
-  points: [number, number, number][];
+  points: V3[];
   color: string;
   n: number;
   flowFor: () => number;
@@ -176,9 +209,9 @@ function FlowParticles({
     () =>
       new THREE.PointsMaterial({
         color: new THREE.Color(color),
-        size: 0.14,
+        size: 0.1,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.68,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         sizeAttenuation: true,
@@ -208,39 +241,17 @@ function FlowParticles({
   );
 }
 
-const AORTA: [number, number, number][] = [
-  [0.9, 1.4, 0.2],
-  [0.8, 2.6, 0.1],
-  [0.2, 3.4, -0.2],
-  [-0.6, 3.2, -0.6],
-  [-0.7, 1.8, -0.9],
-  [-0.6, -0.5, -1.0],
-];
-const PA: [number, number, number][] = [
-  [-1.3, 1.3, 0.4],
-  [-1.5, 2.6, 0.3],
-  [-2.2, 3.1, 0.0],
-  [-3.0, 2.8, -0.2],
-];
-const VENE_CAVE: [number, number, number][] = [
-  [-1.4, -2.6, 0.2],
-  [-1.5, -0.2, 0.3],
-  [-1.6, 1.0, 0.4],
-];
-const VENE_POLM: [number, number, number][] = [
-  [1.9, 2.4, -0.7],
-  [1.4, 1.9, -0.5],
-  [1.0, 1.4, -0.3],
-];
+const AORTA_PATH = CENTERLINES.aorta;
+const PULM_PATH: V3[] = [...CENTERLINES.pulmTrunk, ...CENTERLINES.pulmL.slice(1)];
 
 function ventScalar(volField: number, pField: number): number {
   const st = useStore.getState();
   const v = lastSample(volField);
   const p = lastSample(pField);
-  const r = shortAxis(v, 1.6);
+  const r = Math.cbrt(Math.max(v, 10));
   switch (st.analyticVar) {
     case 'stress':
-      return THREE.MathUtils.clamp((p * r) / 120, 0, 1); // Laplace ∝ P·r
+      return THREE.MathUtils.clamp((p * r) / 420, 0, 1); // Laplace ∝ P·r
     case 'perfusione':
       return THREE.MathUtils.clamp((st.beat?.districtFlow[4] ?? 0.25) / 0.6, 0, 1);
     case 'mvo2':
@@ -250,36 +261,54 @@ function ventScalar(volField: number, pField: number): number {
 
 function Content({ low }: { low: boolean }) {
   const co = () => useStore.getState().beat?.co ?? 5;
-  // Degradazione automatica: metà particelle in modalità "low".
   const nA = low ? 120 : 240;
   const nP = low ? 100 : 200;
   return (
-    <group scale={0.9}>
+    <group rotation={[0.12, -0.12, 0.2]} position={[0.05, 0.1, 0]} scale={0.62}>
       <ambientLight intensity={0.3} />
       <Ventricle
         volField={SAMPLE.vlv}
-        ar={1.7}
-        x={0.95}
+        vref={120}
+        length={3.0}
+        rMax={1.2}
+        crescent={false}
+        septalAngle={Math.PI}
+        pos={[0.5, -1.5, 0.1]}
         color="#ff5a3c"
         scalarFor={() => ventScalar(SAMPLE.vlv, SAMPLE.plv)}
       />
       <Ventricle
         volField={SAMPLE.vrv}
-        ar={1.5}
-        x={-1.25}
+        vref={130}
+        length={2.75}
+        rMax={1.42}
+        crescent
+        septalAngle={0}
+        pos={[-0.2, -1.35, 0.35]}
         color="#3b74ff"
         scalarFor={() => ventScalar(SAMPLE.vrv, SAMPLE.prv)}
       />
       <Septum />
-      <Atrium volField={SAMPLE.vlv} x={1.3} y={1.9} color="#ff8f6b" />
-      <Atrium volField={SAMPLE.vrv} x={-1.6} y={1.9} color="#5a8cff" />
-      <Vessel points={AORTA} color="#ff6a3c" />
-      <Vessel points={PA} color="#16c7d6" />
-      <Vessel points={VENE_CAVE} color="#3b74ff" radius={0.3} />
-      <Vessel points={VENE_POLM} color="#16c7d6" radius={0.22} />
+      <Atrium
+        volField={SAMPLE.vlv}
+        vref={120}
+        pos={[1.3, 1.45, -0.55]}
+        radius={0.98}
+        color="#ff8f6b"
+        appendage={[0.7, 0.3, -0.4]}
+      />
+      <Atrium
+        volField={SAMPLE.vrv}
+        vref={130}
+        pos={[-0.7, 1.35, 0.5]}
+        radius={1.02}
+        color="#5a8cff"
+        appendage={[-0.6, 0.4, 0.5]}
+      />
+      <Vessels />
       <Reservoir />
-      <FlowParticles points={AORTA} color="#ffb199" n={nA} flowFor={co} />
-      <FlowParticles points={PA} color="#8fe8f2" n={nP} flowFor={co} />
+      <FlowParticles points={AORTA_PATH} color="#ff8352" n={nA} flowFor={co} />
+      <FlowParticles points={PULM_PATH} color="#4fcfe0" n={nP} flowFor={co} />
     </group>
   );
 }
@@ -293,7 +322,7 @@ export default function HeartScene() {
     <Canvas
       gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }}
       dpr={[1, 2]}
-      camera={{ position: [0, 0.5, 9], fov: 42 }}
+      camera={{ position: [0, 0.3, 9.5], fov: 42 }}
       style={{ background: 'transparent' }}
     >
       <PerformanceMonitor onDecline={() => setLow(true)} onIncline={() => setLow(false)} />

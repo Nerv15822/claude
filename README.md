@@ -66,9 +66,11 @@ metilene, cianuro del nitroprussiato, necrosi da stravaso), ciascuno con gravit�
 
 ### Scena 3D e UI
 
-Cuore **procedurale** (nessun asset): ventricoli come ellissoidi prolati i cui semiassi invertono il
-volume del motore, vasi come `TubeGeometry`, serbatoio venoso distensibile, setto con curvatura
-invertibile, particelle di flusso additive. `ShaderMaterial` Fresnel con `AdditiveBlending`,
+Cuore **procedurale** (nessun asset): camere a forma anatomica (ventricoli con apice appuntito, VD
+a sezione a D/semiluna appoggiato al setto) la cui scala è guidata dal volume del motore, vasi come
+tubi **affusolati e ramificati** su linee centrali curve (arco aortico con tronchi sovraortici,
+biforcazione del tronco polmonare), serbatoio venoso distensibile, setto con curvatura invertibile,
+particelle di flusso additive. `ShaderMaterial` Fresnel con `AdditiveBlending`,
 modalità estetica/analitica (colormap percettivamente uniforme) e piano di sezione. UI a una colonna
 con pannello numerico (delta e direzione), tracciati, loop PV, **diagramma di Guyton live**, flussi
 regionali, banner degli avvisi, scheda farmaco, e modalità **Confronto** e **Sfida**.
